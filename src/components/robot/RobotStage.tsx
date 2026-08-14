@@ -1,13 +1,13 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { useTiltControl } from '@/hooks/useTiltControl'
+import { useSledzenieWskaznika } from '@/hooks/useSledzenieWskaznika'
 import { cn } from '@/lib/utils'
 
 /**
  * ROBOT — moduł CELOWO ODIZOLOWANY od reszty aplikacji.
  * =====================================================
  * Robot docelowo będzie inny (inna scena, inny wygląd), dlatego CAŁA jego
- * logika mieszka w tym jednym pliku: scena Spline, żyroskop, aktywacja na iOS
- * oraz wersja zapasowa. Wymiana robota to edycja wyłącznie tego pliku.
+ * logika mieszka w tym jednym pliku: scena Spline, śledzenie wskaźnika oraz
+ * wersja zapasowa. Wymiana robota to edycja wyłącznie tego pliku.
  *
  * WAGA: scena Spline to około 1,3 MB po kompresji, czyli większość wagi całej
  * aplikacji (sama ankieta to około 200 kB). Dlatego:
@@ -59,7 +59,8 @@ function oszczedzajTransfer(): boolean {
 
 export function RobotStage({ className }: { className?: string }) {
   const stageRef = useRef<HTMLDivElement>(null)
-  const { isTouch, state, enableGyro } = useTiltControl(stageRef)
+  useSledzenieWskaznika(stageRef)
+  const [isTouch, setIsTouch] = useState(false)
   const [lekkaWersja, setLekkaWersja] = useState(false)
   /** Scena 3D zgłosiła, że jest gotowa. */
   const [scenaGotowa, setScenaGotowa] = useState(false)
@@ -68,9 +69,15 @@ export function RobotStage({ className }: { className?: string }) {
   /** Czy pokazać podpowiedź „Dotknij mnie" przy głowie robota. */
   const [pokazPodpowiedz, setPokazPodpowiedz] = useState(false)
 
-  // Decyzję podejmujemy po zamontowaniu, żeby nie rozjechał się pierwszy render.
+  // Decyzje zależne od urządzenia podejmujemy po zamontowaniu, żeby nie
+  // rozjechał się pierwszy render.
   useEffect(() => {
     setLekkaWersja(oszczedzajTransfer())
+    setIsTouch(
+      typeof window !== 'undefined' &&
+        (window.matchMedia('(pointer: coarse)').matches ||
+          navigator.maxTouchPoints > 0),
+    )
   }, [])
 
   // Ile czekamy, zanim pokażemy plakat zamiast sceny. Na wolnym łączu scena
@@ -82,19 +89,6 @@ export function RobotStage({ className }: { className?: string }) {
     return () => window.clearTimeout(id)
   }, [lekkaWersja, scenaGotowa])
 
-  // Pierwszy dotyk gdziekolwiek na stronie aktywuje żyroskop (iOS wymaga, by
-  // prośba o zgodę wyszła z gestu użytkownika). Działa cicho: jeśli się nie
-  // uda, robot po prostu nie reaguje na przechył, a mysz działa zawsze.
-  useEffect(() => {
-    if (lekkaWersja) return
-    if (!isTouch || state !== 'idle') return
-    const onFirstTouch = () => {
-      void enableGyro()
-    }
-    window.addEventListener('pointerdown', onFirstTouch, { once: true })
-    return () => window.removeEventListener('pointerdown', onFirstTouch)
-  }, [isTouch, state, enableGyro, lekkaWersja])
-
   /**
    * Podpowiedź przy głowie robota. Pojawia się, gdy scena jest już gotowa
    * (nad szkieletem nie miałaby sensu) i znika w chwili, gdy człowiek dotknie
@@ -104,10 +98,6 @@ export function RobotStage({ className }: { className?: string }) {
    * Celowo nie chowa się sama po czasie: ktoś może najpierw przeczytać wstęp,
    * a dopiero potem spojrzeć niżej. Znikanie po kilku sekundach sprawiłoby,
    * że część osób nigdy by jej nie zobaczyła.
-   *
-   * Świadomie NIE uzależniam jej od tego, czy żyroskop zdążył się włączyć.
-   * Wcześniejsza wersja tak robiła i na telefonie podpowiedź nie pokazywała
-   * się wcale — czyli dokładnie tam, gdzie jest najbardziej potrzebna.
    */
   useEffect(() => {
     if (lekkaWersja || !scenaGotowa) return
@@ -115,11 +105,9 @@ export function RobotStage({ className }: { className?: string }) {
 
     const zamknij = () => setPokazPodpowiedz(false)
 
-    // UWAGA, PUŁAPKA: obsługa żyroskopu SYNTETYZUJE zdarzenia `pointermove`
-    // na płótnie sceny — właśnie dzięki temu robot śledzi przechył telefonu.
-    // Lecą one nieprzerwanie, kilkadziesiąt na sekundę, i bez tego warunku
-    // gasiły podpowiedź w tej samej chwili, w której się pojawiła. Zdarzenia
-    // od człowieka mają `isTrusted === true`, sztuczne — `false`.
+    // Liczy się wyłącznie ruch człowieka. Śledzenie wskaźnika podaje scenie
+    // pozycję palca zdarzeniami tworzonymi w kodzie, a te mają
+    // `isTrusted === false` — bez tego warunku podpowiedź gasłaby sama.
     const odCzlowieka = (e: Event) => {
       if (e.isTrusted) zamknij()
     }

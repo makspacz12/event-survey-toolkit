@@ -278,6 +278,7 @@ function RulerScale({
         <div className="mt-2.5 flex justify-end">
           <button
             type="button"
+            aria-pressed={absent}
             onClick={() => onChange(absent ? null : NIEOBECNY)}
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-dashed px-3 font-spacemono text-[11px] transition-all duration-200 focus:outline-none"
             style={
@@ -320,6 +321,7 @@ function SharpToggle({
           <button
             key={opt.value}
             type="button"
+            aria-pressed={active}
             onClick={() => onChange(active ? null : opt.value)}
             className="h-12 rounded-md border font-dmserif text-[19px] transition-all duration-200 focus:outline-none"
             style={
@@ -358,6 +360,9 @@ function OptionChip({
   return (
     <button
       type="button"
+      // Bez tego czytnik ekranu czyta samą treść opcji i nie mówi, czy jest
+      // wybrana — osoba niewidoma nie ma jak sprawdzić, co zaznaczyła.
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
         'flex min-h-[44px] items-center gap-2.5 rounded-md border text-left font-spacemono text-[12px] leading-snug transition-all duration-200 focus:outline-none',

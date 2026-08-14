@@ -349,8 +349,33 @@ export default function SurveyFlow() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
+  /**
+   * „Dalej" pilnuje pytań OBOWIĄZKOWYCH z bieżącej sekcji.
+   *
+   * Chodzi przede wszystkim o pierwsze pytanie, o dni uczestnictwa: od niego
+   * zależy, które sekcje w ogóle się pokażą. Puste oznacza ankietę bez połowy
+   * pytań, więc nie wolno go przeoczyć. Wcześniej pilnował tego dopiero
+   * przycisk „Zakończ ankietę" — czyli na samym końcu, gdy uczestnik był już
+   * myślami gdzie indziej.
+   *
+   * Nie blokujemy samego przycisku. Wyszarzony przycisk nic nie tłumaczy;
+   * człowiek klika i nie wie, dlaczego nic się nie dzieje. Zamiast tego
+   * pokazujemy komunikat, podświetlamy kartę pytania i przewijamy do niej —
+   * dokładnie tak, jak przy kończeniu ankiety.
+   *
+   * Pytania nieobowiązkowe wolno pomijać. Tak było od początku i tak zostaje.
+   */
   const dalej = () => {
     if (krok.rodzaj !== 'sekcja') return
+
+    const brak = brakujace(sekcje[krok.index])
+    if (brak.length > 0) {
+      setBlad(`Uzupełnij jeszcze: „${brak[0].tresc}”`)
+      setBrakujacePytanie(brak[0].id)
+      przewinDoPytania(brak[0].id)
+      return
+    }
+
     if (krok.index + 1 < sekcje.length) idzDo(krok.index + 1)
     else zakoncz()
   }

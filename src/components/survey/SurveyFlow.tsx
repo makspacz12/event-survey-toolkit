@@ -112,8 +112,6 @@ export default function SurveyFlow() {
     return { rodzaj: 'sekcja', index: s.biezacaSekcja }
   })
   const [blad, setBlad] = useState<string | null>(null)
-  // Czy na ekranie końcowym rozwinięto pole „chcę się przedstawić".
-  const [podpisOtwarty, setPodpisOtwarty] = useState(false)
   const [status, setStatus] = useState<StatusWysylki>(
     wysylkaSkonfigurowana ? 'gotowe' : 'brak-konfiguracji',
   )
@@ -391,33 +389,6 @@ export default function SurveyFlow() {
   }
 
   /**
-   * DOSYŁKA Z EKRANU KOŃCOWEGO.
-   *
-   * Na ekranie końcowym można jeszcze dopisać komentarz i podpisać się
-   * imieniem. Pierwsza wysyłka poszła wcześniej, więc bez tego te pola
-   * zostawałyby wyłącznie w pamięci telefonu i nigdy nie trafiły do
-   * organizatora — mimo że aplikacja je zbiera i wysyła w ładunku.
-   *
-   * Wysyłamy ponownie 2 s po ostatniej zmianie. Skrypt po stronie Google
-   * rozpoznaje powtórkę po identyfikatorze sesji i oznacza poprzedni wiersz
-   * jako nieaktualny, więc w arkuszu zostaje najnowsza, pełna wersja.
-   */
-  const dopisek = stan.odpowiedzi['koniec-dopisek']
-  const podpis = stan.intro.imieNazwisko
-  const pierwszaDosylka = useRef(true)
-
-  useEffect(() => {
-    if (krok.rodzaj !== 'koniec' || !wysylkaSkonfigurowana) return
-    // Pomijamy przebieg tuż po zakończeniu — tamtą wysyłkę zrobił `zakoncz()`.
-    if (pierwszaDosylka.current) {
-      pierwszaDosylka.current = false
-      return
-    }
-    const id = window.setTimeout(() => void wyslij(stanRef.current), 2000)
-    return () => window.clearTimeout(id)
-  }, [dopisek, podpis, krok.rodzaj])
-
-  /**
    * Przycisk „Wstecz" ZDEJMUJE wpis z historii, zamiast dokładać nowy.
    * Wcześniej wołał `idzDo()`, które robi `pushState` — po kilku przejściach
    * tam i z powrotem historia puchła, a systemowe cofnięcie przenosiło
@@ -435,7 +406,6 @@ export default function SurveyFlow() {
     ;(window as Window & { resetAnkiety?: () => void }).resetAnkiety = () => {
       wyczyscStan()
       setStan(pustyStan)
-      setPodpisOtwarty(false)
       setKrok({ rodzaj: 'intro' })
     }
   }, [])
@@ -760,75 +730,6 @@ export default function SurveyFlow() {
                     )}
                   </div>
                 )}
-              </div>
-
-              {/* Wszystko poniżej jest OPCJONALNE — ankieta jest już skończona. */}
-              <div className="mt-9 flex flex-col gap-3">
-                {/* Zmiana zdania co do anonimowości: ktoś wypełnił anonimowo,
-                    ale po namyśle chce się podpisać (np. liczy na kontakt). */}
-                {stan.intro.przedstawienie !== 'imie' && (
-                  <div className="rounded-md border border-dashed border-[#3B3121]/22 bg-white/60 p-4">
-                    {!podpisOtwarty ? (
-                      <>
-                        <p className="text-[13.5px] leading-relaxed text-[#6B5D42]">
-                          Wypełniłeś(-aś) anonimowo. Jeśli chcesz, możesz się
-                          jeszcze podpisać. To nadal w pełni dobrowolne.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setPodpisOtwarty(true)}
-                          className="mt-2.5 inline-flex min-h-[44px] items-center gap-1.5 font-spacemono text-[11px] uppercase tracking-[0.14em] text-[#9C8345] transition-colors hover:text-[#9C7A2C]"
-                        >
-                          <IkonaPlus className="h-3.5 w-3.5" />
-                          Chcę się przedstawić
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <label className="mb-2 block font-spacemono text-[10px] uppercase tracking-[0.2em] text-[#9C8345]">
-                          Imię i nazwisko (opcjonalnie)
-                        </label>
-                        <input
-                          type="text"
-                          autoFocus
-                          value={stan.intro.imieNazwisko}
-                          onChange={(e) =>
-                            setStan((s) => ({
-                              ...s,
-                              intro: {
-                                przedstawienie: 'imie',
-                                imieNazwisko: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="np. Anna Kowalska"
-                          className="min-h-[44px] w-full rounded-md border border-[#3B3121]/20 bg-white p-3 text-[16px] text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Miejsce na cokolwiek, czego nie objęły pytania. */}
-                <div className="rounded-md border border-dashed border-[#3B3121]/22 bg-white/60 p-4">
-                  <label className="mb-2 block font-spacemono text-[10px] uppercase tracking-[0.2em] text-[#9C8345]">
-                    Chcesz dodać coś od siebie? (opcjonalnie)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={
-                      typeof stan.odpowiedzi['koniec-dopisek'] === 'string'
-                        ? (stan.odpowiedzi['koniec-dopisek'] as string)
-                        : ''
-                    }
-                    onChange={(e) =>
-                      ustawOdpowiedz('koniec-dopisek', e.target.value)
-                    }
-                    placeholder="Cokolwiek, o co nie zapytaliśmy…"
-                    className="w-full resize-none rounded-md border border-[#3B3121]/20 bg-white p-3 text-[15px] leading-relaxed text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
-                  />
-                </div>
-
               </div>
 
               {/* Przegląd tego, co uczestnik wysłał. Zastąpił przyciski

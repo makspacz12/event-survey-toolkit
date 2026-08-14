@@ -80,8 +80,6 @@ function ladunek(nr) {
   }
   odpowiedzi['obecnosc-dni'] = 'Piątek (16.10); Sobota (17.10)'
   odpowiedzi['sciezka-1600'] = 'Finał konkursu (Sala Konwersatorium)'
-  odpowiedzi['koniec-dopisek'] = ''
-  etykiety['koniec-dopisek'] = 'Dodatkowy komentarz na koniec'
 
   return {
     token: TOKEN,

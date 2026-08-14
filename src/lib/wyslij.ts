@@ -100,11 +100,6 @@ function zbudujDane(stan: StanAnkiety) {
     }
   }
 
-  // Dopisek z ekranu końcowego — nie należy do żadnej sekcji.
-  const dopisek = stan.odpowiedzi['koniec-dopisek']
-  odpowiedzi['koniec-dopisek'] = typeof dopisek === 'string' ? dopisek : ''
-  etykiety['koniec-dopisek'] = 'Dodatkowy komentarz na koniec'
-
   return {
     token: TOKEN,
     sesja: idSesji(),

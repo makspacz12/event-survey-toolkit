@@ -30,13 +30,23 @@ const Spline = lazy(() => import('@splinetool/react-spline'))
 
 type Polaczenie = {
   saveData?: boolean
-  effectiveType?: string
 }
 
 /**
- * Czy warto oszczędzać transfer? Sprawdzamy tryb oszczędzania danych i realną
- * jakość łącza. Gdy przeglądarka nie udostępnia tych informacji (Safari),
- * zakładamy łącze dobre i pokazujemy pełną scenę.
+ * Czy zamiast sceny 3D pokazać samo zdjęcie robota.
+ *
+ * DECYDUJE WYŁĄCZNIE ŚWIADOMY WYBÓR CZŁOWIEKA: włączony w przeglądarce tryb
+ * oszczędzania danych albo `?lekki=1` w adresie.
+ *
+ * Wcześniej patrzyliśmy też na `effectiveType` — czyli na to, jak przeglądarka
+ * sama ocenia jakość łącza. Okazało się to bezużyteczne: Chrome na zwykłym,
+ * szybkim łączu potrafi raportować „3g” i 0,45 Mb/s, bo jest to krocząca
+ * średnia z ostatnich zapytań, a nie pomiar przepustowości. Skutek był taki,
+ * że robot znikał i zostawało statyczne zdjęcie — u osoby z dobrym internetem.
+ *
+ * Zgadywanie nie jest tu zresztą potrzebne. Scena i tak doczytuje się w tle,
+ * niczego nie blokuje, a gdyby naprawdę nie dotarła, po dwunastu sekundach
+ * pokaże się plakat. Wolne łącze załatwia się więc samo, bez przewidywania.
  */
 function oszczedzajTransfer(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -51,10 +61,7 @@ function oszczedzajTransfer(): boolean {
 
   const polaczenie = (navigator as Navigator & { connection?: Polaczenie })
     .connection
-  if (!polaczenie) return false
-  if (polaczenie.saveData) return true
-  const typ = polaczenie.effectiveType
-  return typ === 'slow-2g' || typ === '2g' || typ === '3g'
+  return Boolean(polaczenie?.saveData)
 }
 
 export function RobotStage({ className }: { className?: string }) {
@@ -126,7 +133,9 @@ export function RobotStage({ className }: { className?: string }) {
     }
   }, [lekkaWersja, scenaGotowa])
 
-  const trescPodpowiedzi = isTouch ? 'Dotknij mnie' : 'Poruszaj myszką'
+  // Napis mówi wprost, co zrobić, żeby robot zareagował. „Dotknij mnie” było
+  // mylące: samo dotknięcie nic nie daje, głowa idzie za RUCHEM palca.
+  const trescPodpowiedzi = isTouch ? 'Przesuń palcem' : 'Poruszaj myszką'
 
   if (lekkaWersja) {
     return (

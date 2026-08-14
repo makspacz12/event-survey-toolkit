@@ -94,6 +94,19 @@ export function RobotStage({ className }: { className?: string }) {
 
   return (
     <div ref={stageRef} className={cn('relative', className)}>
+      {/*
+        Plakat leży POD sceną 3D. Gdy scena się wczyta, jej płótno zasłania go
+        w całości i nikt go nie zobaczy. Gdy jednak nie dojdzie — bo serwery
+        Spline albo unpkg są nieosiągalne z sieci w opactwie — zamiast pustego
+        prostokąta zostaje zdjęcie robota. Kosztuje 16 kB i nie wymaga
+        żadnej logiki, która mogłaby się sama zepsuć.
+      */}
+      <img
+        src={PLAKAT}
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom"
+      />
       <Suspense
         fallback={
           // Szkielet w kształcie sylwetki robota, nie spinner (DESIGN.md §4).
@@ -107,7 +120,7 @@ export function RobotStage({ className }: { className?: string }) {
       >
         <Spline
           scene={ROBOT_SCENE}
-          className="h-full w-full [&>canvas]:!h-full [&>canvas]:!w-full"
+          className="relative h-full w-full [&>canvas]:!h-full [&>canvas]:!w-full"
         />
       </Suspense>
     </div>

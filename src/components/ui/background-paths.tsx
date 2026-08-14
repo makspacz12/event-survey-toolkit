@@ -1,21 +1,34 @@
-import { motion } from 'framer-motion'
-
 /**
- * Animowane, płynące ścieżki SVG (jak w prototypie). Dwie lustrzane warstwy
- * tworzą wrażenie „przepływu". Kolor: złoto wydarzenia.
+ * Animowane, płynące ścieżki SVG w tle landingu.
+ *
+ * WYDAJNOŚĆ — powód, dla którego to nie jest framer-motion:
+ * poprzednia wersja rysowała 72 ścieżki (36 × 2 warstwy), każdą z własną
+ * animacją JavaScriptu ustawiającą atrybuty SVG w każdej klatce. Razem ze
+ * sceną 3D robota dawało to na telefonie zauważalne przycinanie.
+ *
+ * Teraz: 20 ścieżek i animacja czystym CSS-em (`stroke-dashoffset`), którą
+ * przeglądarka wykonuje poza głównym wątkiem. Efekt wizualny ten sam,
+ * obciążenie kilkukrotnie mniejsze.
  */
+
 function FloatingPaths({ position }: { position: number }) {
-  const paths = Array.from({ length: 36 }, (_, i) => ({
-    id: i,
-    d: `M-${380 - i * 5 * position} -${189 + i * 6}C-${
-      380 - i * 5 * position
-    } -${189 + i * 6} -${312 - i * 5 * position} ${216 - i * 6} ${
-      152 - i * 5 * position
-    } ${343 - i * 6}C${616 - i * 5 * position} ${470 - i * 6} ${
-      684 - i * 5 * position
-    } ${875 - i * 6} ${684 - i * 5 * position} ${875 - i * 6}`,
-    width: 0.5 + i * 0.03,
-  }))
+  const paths = Array.from({ length: 10 }, (_, i) => {
+    const k = i * 3.6 // rozrzut jak przy 36 ścieżkach, ale co trzecia
+    return {
+      id: i,
+      d: `M-${380 - k * 5 * position} -${189 + k * 6}C-${
+        380 - k * 5 * position
+      } -${189 + k * 6} -${312 - k * 5 * position} ${216 - k * 6} ${
+        152 - k * 5 * position
+      } ${343 - k * 6}C${616 - k * 5 * position} ${470 - k * 6} ${
+        684 - k * 5 * position
+      } ${875 - k * 6} ${684 - k * 5 * position} ${875 - k * 6}`,
+      width: 0.5 + k * 0.03,
+      opacity: 0.06 + i * 0.028,
+      // Różne czasy trwania rozsuwają ruch ścieżek względem siebie.
+      duration: 22 + i * 2.4,
+    }
+  })
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -24,26 +37,17 @@ function FloatingPaths({ position }: { position: number }) {
         viewBox="0 0 696 316"
         fill="none"
         preserveAspectRatio="xMidYMid slice"
+        aria-hidden="true"
       >
-        <title>Background Paths</title>
         {paths.map((path) => (
-          <motion.path
+          <path
             key={path.id}
             d={path.d}
             stroke="currentColor"
             strokeWidth={path.width}
-            strokeOpacity={0.04 + path.id * 0.012}
-            initial={{ pathLength: 0.3, opacity: 0.6 }}
-            animate={{
-              pathLength: 1,
-              opacity: [0.25, 0.55, 0.25],
-              pathOffset: [0, 1, 0],
-            }}
-            transition={{
-              duration: 18 + Math.random() * 12,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
+            strokeOpacity={path.opacity}
+            className="sciezka-tla"
+            style={{ animationDuration: `${path.duration}s` }}
           />
         ))}
       </svg>

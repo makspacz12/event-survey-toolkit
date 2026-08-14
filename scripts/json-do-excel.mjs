@@ -43,6 +43,7 @@ for (const sekcja of ankieta.sekcje) {
         ? (p.opcje ?? []).map(opcjaZdjecie).join(' | ')
         : '',
       'Zdjęcie pytania': p.zdjecie ?? '',
+      'Pokaż pytanie gdy': p.pokaz_jesli ? JSON.stringify(p.pokaz_jesli) : '',
       Min: p.min ?? '',
       Max: p.max ?? '',
       'Wymagane (tak/nie)': p.wymagane ? 'tak' : 'nie',
@@ -58,8 +59,8 @@ const arkusz = XLSX.utils.json_to_sheet(wiersze)
 arkusz['!cols'] = [
   { wch: 16 }, { wch: 22 }, { wch: 14 }, { wch: 26 }, { wch: 40 }, { wch: 34 },
   { wch: 22 }, { wch: 14 }, { wch: 60 }, { wch: 50 }, { wch: 40 }, { wch: 28 },
-  { wch: 6 }, { wch: 6 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 18 },
-  { wch: 30 },
+  { wch: 34 }, { wch: 6 }, { wch: 6 }, { wch: 18 }, { wch: 20 }, { wch: 22 },
+  { wch: 18 }, { wch: 30 },
 ]
 arkusz['!freeze'] = { xSplit: 0, ySplit: 1 }
 

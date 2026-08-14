@@ -20,3 +20,9 @@ src/data/ankieta.json.bak
 # systemowe
 .DS_Store
 Thumbs.db
+
+# katalog na artefakty testowe i pliki tymczasowe
+_smieci/
+
+# Skrypt z prawdziwym hasłem i identyfikatorem arkusza — nie trafia do repozytorium
+apps-script/Kod-DO-WKLEJENIA.gs

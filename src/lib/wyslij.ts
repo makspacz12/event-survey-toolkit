@@ -36,6 +36,18 @@ export type StatusWysylki = 'brak-konfiguracji' | 'gotowe' | 'wysylanie' | 'wysl
 /** Czy wysyłka jest w ogóle skonfigurowana (są adres i token). */
 export const wysylkaSkonfigurowana = Boolean(URL && TOKEN)
 
+if (!wysylkaSkonfigurowana) {
+  // Głośne ostrzeżenie, bo to najgroźniejsza cicha awaria tej aplikacji:
+  // ankieta wygląda na sprawną, ludzie ją wypełniają, a odpowiedzi nigdzie
+  // nie docierają. Jedno otwarcie strony po wdrożeniu wystarczy, żeby to
+  // wyłapać.
+  console.warn(
+    '[ankieta] WYSYŁKA WYŁĄCZONA — brak VITE_ARKUSZ_URL lub VITE_ARKUSZ_TOKEN. ' +
+      'Odpowiedzi zostaną tylko w przeglądarce uczestnika. ' +
+      'Po dodaniu zmiennych trzeba zbudować aplikację na nowo (Redeploy).',
+  )
+}
+
 /**
  * Stały identyfikator urządzenia. Pozwala rozpoznać, że ta sama osoba
  * wypełnia drugi raz, bez zbierania jakichkolwiek danych o niej.
@@ -140,34 +152,42 @@ function zapiszKolejke(kolejka: unknown[]) {
 /**
  * Pojedyncza próba wysyłki.
  *
- * DWIE RZECZY, KTÓRE MUSZĄ TU ZOSTAĆ:
+ * `Content-Type: text/plain` MUSI tu zostać. Apps Script nie odpowiada na
+ * zapytania wstępne CORS (preflight), a `application/json` takie zapytanie
+ * wymusza. Zwykły tekst omija problem, a skrypt i tak parsuje JSON.
  *
- * 1. `Content-Type: text/plain` — Apps Script nie odpowiada na zapytania
- *    wstępne CORS (preflight), a `application/json` takie zapytanie wymusza.
- *    Zwykły tekst omija problem, a skrypt i tak parsuje JSON.
+ * DLACZEGO NIE `mode: 'no-cors'`
+ * ==============================
+ * Wcześniej było tu `no-cors`, w przekonaniu, że przeglądarka nie da odczytać
+ * odpowiedzi Google. Sprawdzone w przeglądarce: daje. Google przekierowuje na
+ * `script.googleusercontent.com`, ale ta odpowiedź ma nagłówek zezwalający na
+ * odczyt, więc zwykły `fetch` zwraca normalne `{"ok":true}`.
  *
- * 2. `mode: 'no-cors'` — Google nie odpowiada bezpośrednio, tylko przekierowuje
- *    na `script.googleusercontent.com`. Przeglądarka pozwala tam wysłać dane,
- *    ale zabrania odczytać odpowiedź z obcej domeny. Bez tego trybu `fetch`
- *    kończy się wyjątkiem MIMO UDANEGO ZAPISU, aplikacja raportuje błąd,
- *    wrzuca wysyłkę do kolejki i ponawia ją przy każdym otwarciu strony,
- *    zasypując arkusz duplikatami.
- *
- * Kosztem trybu `no-cors` jest odpowiedź „nieprzezroczysta”: nie znamy statusu
- * ani treści. Brak wyjątku traktujemy więc jako sukces — to wystarcza, bo
- * jedyny realny powód niepowodzenia (brak sieci) wyjątek rzuca.
+ * Różnica jest zasadnicza. W trybie `no-cors` odpowiedź jest „nieprzezroczysta”
+ * i KAŻDA awaria po stronie Google wyglądała jak sukces: uczestnik widział
+ * zieloną informację „Wysłano do organizatora”, a w arkuszu nie było nic.
+ * Test obciążenia pokazał, że przy 50 osobach naraz w ten sposób przepadało
+ * ponad połowa odpowiedzi — po cichu. Teraz nieudany zapis jest widoczny:
+ * ląduje w kolejce i zostaje ponowiony.
  */
 async function wyslijRaz(dane: unknown): Promise<boolean> {
   if (!URL) return false
   try {
-    await fetch(URL, {
+    const odp = await fetch(URL, {
       method: 'POST',
-      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(dane),
       redirect: 'follow',
     })
-    return true
+    const tresc = await odp.text()
+    try {
+      return (JSON.parse(tresc) as { ok?: boolean }).ok === true
+    } catch {
+      // Zamiast JSON-a przyszedł HTML — najczęściej strona logowania Google,
+      // czyli wdrożenie nie jest ustawione na „dostęp: wszyscy”.
+      console.warn('[ankieta] serwer odpowiedział nie-JSON-em:', tresc.slice(0, 120))
+      return false
+    }
   } catch {
     // Najczęściej brak połączenia. Ładunek trafi do kolejki i spróbujemy
     // ponownie, gdy sieć wróci.
@@ -175,36 +195,84 @@ async function wyslijRaz(dane: unknown): Promise<boolean> {
   }
 }
 
+/** Identyfikuje ładunek w kolejce, żeby dało się usunąć właściwy wpis. */
+function kluczLadunku(dane: unknown): string {
+  const d = dane as { sesja?: string; wersja?: string }
+  return `${d?.sesja ?? ''}|${d?.wersja ?? ''}`
+}
+
 /**
  * Wysyła odpowiedzi. Gdy się nie uda, ląduje w kolejce i zostanie ponowione.
  * Zwraca `true` przy sukcesie.
+ *
+ * Po udanej wysyłce usuwamy z kolejki wcześniejsze próby tej samej sesji.
+ * Bez tego ręczne „Spróbuj teraz” zostawiało w kolejce starą kopię, która
+ * wychodziła przy następnym otwarciu strony i tworzyła w arkuszu drugi,
+ * uboższy wiersz tej samej osoby.
  */
 export async function wyslijOdpowiedzi(stan: StanAnkiety): Promise<boolean> {
   if (!wysylkaSkonfigurowana) return false
   const dane = zbudujDane(stan)
-  const ok = await wyslijRaz(dane)
-  if (!ok) doKolejki(dane)
+
+  let ok = await wyslijRaz(dane)
+  if (!ok) {
+    // Jedna ponowna próba po chwili. Najczęstsza przyczyna niepowodzenia to
+    // tłok w pierwszych minutach po rozesłaniu ankiety — wtedy druga próba
+    // trafia już w luźniejszą kolejkę. Czekamy tyle, żeby nie dokładać do
+    // szczytu, ale na tyle krótko, żeby uczestnik jeszcze patrzył w ekran.
+    await new Promise((r) => setTimeout(r, 2500))
+    ok = await wyslijRaz(dane)
+  }
+
+  if (ok) usunZKolejki(kluczLadunku(dane))
+  else doKolejki(dane)
   return ok
 }
+
+function usunZKolejki(klucz: string) {
+  const kolejka = pobierzKolejke()
+  const pozostale = kolejka.filter((d) => kluczLadunku(d) !== klucz)
+  if (pozostale.length !== kolejka.length) zapiszKolejke(pozostale)
+}
+
+/**
+ * Czy opróżnianie już trwa. Bez tej flagi dwa równoległe przebiegi (start
+ * aplikacji + zdarzenie „online”) czytałyby tę samą kolejkę i wysłały
+ * wszystko podwójnie.
+ */
+let opróżnianieWToku = false
 
 /**
  * Próbuje wysłać wszystko, co czeka w kolejce. Wywoływane przy starcie
  * aplikacji i po powrocie połączenia.
+ *
+ * WAŻNE: usuwamy z kolejki wyłącznie te wpisy, które faktycznie poszły —
+ * odczytując ją na nowo tuż przed zapisem. Wcześniejsza wersja nadpisywała
+ * kolejkę listą wyliczoną PRZED pętlą, więc ankieta dorzucona w trakcie
+ * (uczestnik kończył wypełnianie, gdy sieć właśnie wracała) była kasowana
+ * bez wysłania.
  */
 export async function oproznijKolejke(): Promise<number> {
-  if (!wysylkaSkonfigurowana) return 0
-  const kolejka = pobierzKolejke()
-  if (kolejka.length === 0) return 0
+  if (!wysylkaSkonfigurowana || opróżnianieWToku) return 0
+  opróżnianieWToku = true
+  try {
+    const doWyslania = pobierzKolejke()
+    if (doWyslania.length === 0) return 0
 
-  const pozostale: unknown[] = []
-  let wyslane = 0
-  for (const dane of kolejka) {
-    const ok = await wyslijRaz(dane)
-    if (ok) wyslane++
-    else pozostale.push(dane)
+    let wyslane = 0
+    for (const dane of doWyslania) {
+      const ok = await wyslijRaz(dane)
+      if (!ok) continue
+      wyslane++
+      // Odczyt na nowo: w czasie oczekiwania na odpowiedź kolejka mogła się
+      // powiększyć o świeżo zakończoną ankietę.
+      const aktualna = pobierzKolejke()
+      zapiszKolejke(aktualna.filter((d) => d !== dane && kluczLadunku(d) !== kluczLadunku(dane)))
+    }
+    return wyslane
+  } finally {
+    opróżnianieWToku = false
   }
-  zapiszKolejke(pozostale)
-  return wyslane
 }
 
 /** Ile ładunków czeka na wysłanie. */

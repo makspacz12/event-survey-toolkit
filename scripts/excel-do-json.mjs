@@ -122,6 +122,20 @@ wiersze.forEach((w, i) => {
     uzyjZdjec && opcjeZdjecia[idx] ? { tekst: t, zdjecie: opcjeZdjecia[idx] } : t,
   )
 
+  // Warunek pokazania pojedynczego pytania (np. o jury pytamy tylko tego,
+  // kto był na finale). Format taki sam jak warunek sekcji.
+  let pokazPytanie
+  const surowyWarunek = tekst(w['Pokaż pytanie gdy'])
+  if (surowyWarunek) {
+    try {
+      pokazPytanie = JSON.parse(surowyWarunek)
+    } catch {
+      bledy.push(
+        `wiersz ${nrWiersza}: „Pokaż pytanie gdy" nie jest poprawnym JSON-em: ${surowyWarunek}`,
+      )
+    }
+  }
+
   const min = liczbaLubBrak(w['Min'])
   const max = liczbaLubBrak(w['Max'])
   if (typ === 'skala' && (min === undefined || max === undefined))
@@ -143,6 +157,7 @@ wiersze.forEach((w, i) => {
       : {}),
     ...(boolTak(w['Komentarz (tak/nie)']) ? { komentarz: true } : {}),
     ...(tekst(w['Zdjęcie pytania']) ? { zdjecie: tekst(w['Zdjęcie pytania']) } : {}),
+    ...(pokazPytanie ? { pokaz_jesli: pokazPytanie } : {}),
     ...(tekst(w['Podpowiedź']) ? { placeholder: tekst(w['Podpowiedź']) } : {}),
   })
 })

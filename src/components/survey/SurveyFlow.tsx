@@ -41,15 +41,28 @@ const ANKIETA = ankietaJson as Ankieta
 /** Fizyka sprężyny — jedna dla całej aplikacji (DESIGN.md §6). */
 const SPRING = { type: 'spring' as const, stiffness: 120, damping: 20 }
 
-/** Czy sekcja jest widoczna przy obecnych odpowiedziach? */
-function widoczna(sekcja: Sekcja, odpowiedzi: Record<string, Wartosc>): boolean {
-  const w: Warunek | undefined = sekcja.pokaz_jesli
+/** Sprawdza warunek `pokaz_jesli` — wspólny dla sekcji i pojedynczych pytań. */
+function spelniony(
+  w: Warunek | undefined,
+  odpowiedzi: Record<string, Wartosc>,
+): boolean {
   if (!w) return true
   const wartosc = odpowiedzi[w.pytanie]
   if (w.rowne != null) return wartosc === w.rowne
   if (w.zawiera != null)
     return Array.isArray(wartosc) && wartosc.includes(w.zawiera)
+  if (w.rozne_od != null) {
+    // „Inna niż X” wymaga, żeby odpowiedź w ogóle padła. Inaczej pytanie
+    // zależne migałoby przed udzieleniem odpowiedzi nadrzędnej.
+    if (wartosc == null || wartosc === '') return false
+    return wartosc !== w.rozne_od
+  }
   return true
+}
+
+/** Czy sekcja jest widoczna przy obecnych odpowiedziach? */
+function widoczna(sekcja: Sekcja, odpowiedzi: Record<string, Wartosc>): boolean {
+  return spelniony(sekcja.pokaz_jesli, odpowiedzi)
 }
 
 type Krok = { rodzaj: 'intro' } | { rodzaj: 'sekcja'; index: number } | { rodzaj: 'koniec' }
@@ -118,21 +131,71 @@ export default function SurveyFlow() {
   }, [])
   // Błąd „przenoszony" przy skoku do innej sekcji (patrz zakoncz()).
   const pendingBladRef = useRef<string | null>(null)
+  // Pytanie, do którego trzeba przewinąć po zmianie sekcji.
+  const pendingPrzewinRef = useRef<string | null>(null)
+  // Pytanie z brakującą odpowiedzią — jego karta dostaje wyróżnienie.
+  const [brakujacePytanie, setBrakujacePytanie] = useState<string | null>(null)
+
+  /**
+   * Przewija do karty pytania i zostawia ją w widocznej części ekranu.
+   * `block: 'center'` daje margines na przyklejony nagłówek i stopkę.
+   */
+  const przewinDoPytania = (id: string) => {
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`pytanie-${id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
+  /**
+   * Zapis stanu do pamięci przeglądarki, ale NIE przy każdym naciśnięciu
+   * klawisza. `localStorage.setItem` jest synchroniczny: przy pisaniu w polu
+   * tekstowym każdy znak uruchamiał serializację całego stanu i blokował
+   * wątek, przez co pisanie się zacinało. Odkładamy zapis o 400 ms od
+   * ostatniej zmiany, a przy zamykaniu strony dopisujemy natychmiast.
+   */
+  const stanRef = useRef(stan)
+  stanRef.current = stan
 
   useEffect(() => {
-    zapiszStan(stan)
+    const id = window.setTimeout(() => zapiszStan(stan), 400)
+    return () => window.clearTimeout(id)
   }, [stan])
+
+  useEffect(() => {
+    const zapiszTeraz = () => zapiszStan(stanRef.current)
+    // `pagehide` łapie też zamknięcie karty na iOS, gdzie `beforeunload`
+    // bywa pomijany.
+    window.addEventListener('pagehide', zapiszTeraz)
+    document.addEventListener('visibilitychange', zapiszTeraz)
+    return () => {
+      zapiszTeraz()
+      window.removeEventListener('pagehide', zapiszTeraz)
+      document.removeEventListener('visibilitychange', zapiszTeraz)
+    }
+  }, [])
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
     setBlad(pendingBladRef.current)
     pendingBladRef.current = null
+    // Po skoku do sekcji z brakiem przewijamy do samego pytania.
+    if (pendingPrzewinRef.current) {
+      przewinDoPytania(pendingPrzewinRef.current)
+      pendingPrzewinRef.current = null
+    }
   }, [krok])
 
   const sekcje = useMemo(
     () => ANKIETA.sekcje.filter((s) => widoczna(s, stan.odpowiedzi)),
     [stan.odpowiedzi],
   )
+
+  // Aktualna lista sekcji dostępna w nasłuchu historii, który jest rejestrowany
+  // raz i nie widziałby świeżej wartości przez domknięcie.
+  const sekcjeRef = useRef(sekcje)
+  sekcjeRef.current = sekcje
 
   // Gdy zmiana odpowiedzi filtrujących SKRÓCI listę sekcji, a byliśmy na
   // sekcji spoza nowego zakresu — cofnij na ostatnią.
@@ -147,8 +210,14 @@ export default function SurveyFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sekcje.length])
 
-  const ustawOdpowiedz = (id: string, w: Wartosc) =>
+  const ustawOdpowiedz = (id: string, w: Wartosc) => {
     setStan((s) => ({ ...s, odpowiedzi: { ...s.odpowiedzi, [id]: w } }))
+    // Wyróżnienie i komunikat znikają, gdy człowiek zrobi to, o co prosimy.
+    if (brakujacePytanie === id) {
+      setBrakujacePytanie(null)
+      setBlad(null)
+    }
+  }
 
   const sekcjaRozpoczeta = (sekcja: Sekcja) =>
     sekcja.pytania.some((p) => {
@@ -159,14 +228,70 @@ export default function SurveyFlow() {
   const brakujace = (sekcja: Sekcja) =>
     sekcja.pytania.filter((p) => {
       if (!p.wymagane) return false
+      // Pytanie ukryte warunkiem nie może blokować zakończenia ankiety.
+      if (!spelniony(p.pokaz_jesli, stan.odpowiedzi)) return false
       const w = stan.odpowiedzi[p.id]
       return w == null || w === '' || (Array.isArray(w) && w.length === 0)
     })
 
+  /**
+   * NAWIGACJA A PRZYCISK „WSTECZ" W TELEFONIE
+   * =========================================
+   * Bez tego cofnięcie gestem albo przyciskiem systemowym wyrzucało z całej
+   * ankiety, bo wszystkie sekcje dzieliły jeden adres. Każde przejście
+   * dokłada teraz wpis do historii przeglądarki, więc „wstecz" cofa o jedną
+   * sekcję, dokładnie tak, jak człowiek się spodziewa.
+   *
+   * `zHistorii` blokuje dopisywanie nowego wpisu, gdy zmiana kroku sama
+   * pochodzi z cofnięcia — inaczej powstałaby pętla.
+   */
+  const zHistorii = useRef(false)
+
   const idzDo = (index: number) => {
     setKrok({ rodzaj: 'sekcja', index })
     setStan((s) => ({ ...s, biezacaSekcja: index }))
+    if (!zHistorii.current) {
+      window.history.pushState(
+        { ankieta: index },
+        '',
+        `#/ankieta/${index + 1}`,
+      )
+    }
   }
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const stanHistorii = e.state as {
+        ankieta?: number
+        koniec?: boolean
+      } | null
+      zHistorii.current = true
+      if (stanHistorii?.koniec) {
+        // Powrót „do przodu” na ekran z podziękowaniem.
+        setKrok({ rodzaj: 'koniec' })
+      } else if (stanHistorii && typeof stanHistorii.ankieta === 'number') {
+        // Indeks z historii może wskazywać sekcję, której już nie ma: ktoś
+        // wszedł głęboko, wrócił do „Obecności", odznaczył dzień i lista się
+        // skurczyła. Bez przycięcia render trafiałby w `undefined` i pokazał
+        // pusty ekran w środku ankiety.
+        const bezpieczny = Math.min(
+          stanHistorii.ankieta,
+          Math.max(sekcjeRef.current.length - 1, 0),
+        )
+        setKrok({ rodzaj: 'sekcja', index: bezpieczny })
+        setStan((s) => ({ ...s, biezacaSekcja: bezpieczny }))
+      } else {
+        // Wpis bez naszego stanu = wejście na ankietę, czyli ekran startowy.
+        setKrok({ rodzaj: 'intro' })
+      }
+      // Odblokowujemy dopiero po zastosowaniu zmiany.
+      window.setTimeout(() => {
+        zHistorii.current = false
+      }, 0)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   const dalej = () => {
     if (krok.rodzaj !== 'sekcja') return
@@ -174,38 +299,88 @@ export default function SurveyFlow() {
     else zakoncz()
   }
 
-  /** Zakończenie: sprawdź wymagane WE WSZYSTKICH widocznych sekcjach. */
+  /**
+   * Zakończenie: sprawdź wymagane WE WSZYSTKICH widocznych sekcjach.
+   *
+   * Samo pokazanie komunikatu nie wystarcza: przy długiej sekcji ląduje on
+   * poza ekranem, bo przycisk „Zakończ” siedzi w przyklejonej stopce, a treść
+   * jest przewinięta wyżej. Człowiek klika i widzi, że nic się nie dzieje.
+   * Dlatego dodatkowo przewijamy do brakującego pytania i podświetlamy jego
+   * kartę.
+   */
   const zakoncz = () => {
     for (let i = 0; i < sekcje.length; i++) {
       const brak = brakujace(sekcje[i])
       if (brak.length > 0) {
         const komunikat = `Uzupełnij jeszcze: „${brak[0].tresc}”`
+        setBrakujacePytanie(brak[0].id)
         if (krok.rodzaj === 'sekcja' && krok.index === i) {
           setBlad(komunikat)
+          przewinDoPytania(brak[0].id)
         } else {
           pendingBladRef.current = komunikat
+          pendingPrzewinRef.current = brak[0].id
           idzDo(i)
         }
         return
       }
     }
+    setBrakujacePytanie(null)
     setStan((s) => ({ ...s, ukonczona: true }))
     setKrok({ rodzaj: 'koniec' })
+    // Ekran końcowy też dostaje własny wpis w historii. Bez tego dzielił go
+    // z ostatnią sekcją, więc cofnięcie z „Dziękujemy” przeskakiwało o jedną
+    // sekcję za daleko — zamiast do podsumowania, w środek ankiety.
+    if (!zHistorii.current) {
+      window.history.pushState({ koniec: true }, '', '#/ankieta/koniec')
+    }
     void wyslij()
   }
 
   /** Wysyłka do arkusza. Nieudana próba trafia do kolejki i jest ponawiana. */
-  const wyslij = async () => {
+  const wyslij = async (stanDoWyslania: StanAnkiety = stanRef.current) => {
     if (!wysylkaSkonfigurowana) return
     setStatus('wysylanie')
-    const ok = await wyslijOdpowiedzi(stan)
+    const ok = await wyslijOdpowiedzi(stanDoWyslania)
     setStatus(ok ? 'wyslano' : 'blad')
   }
 
+  /**
+   * DOSYŁKA Z EKRANU KOŃCOWEGO.
+   *
+   * Na ekranie końcowym można jeszcze dopisać komentarz i podpisać się
+   * imieniem. Pierwsza wysyłka poszła wcześniej, więc bez tego te pola
+   * zostawałyby wyłącznie w pamięci telefonu i nigdy nie trafiły do
+   * organizatora — mimo że aplikacja je zbiera i wysyła w ładunku.
+   *
+   * Wysyłamy ponownie 2 s po ostatniej zmianie. Skrypt po stronie Google
+   * rozpoznaje powtórkę po identyfikatorze sesji i oznacza poprzedni wiersz
+   * jako nieaktualny, więc w arkuszu zostaje najnowsza, pełna wersja.
+   */
+  const dopisek = stan.odpowiedzi['koniec-dopisek']
+  const podpis = stan.intro.imieNazwisko
+  const pierwszaDosylka = useRef(true)
+
+  useEffect(() => {
+    if (krok.rodzaj !== 'koniec' || !wysylkaSkonfigurowana) return
+    // Pomijamy przebieg tuż po zakończeniu — tamtą wysyłkę zrobił `zakoncz()`.
+    if (pierwszaDosylka.current) {
+      pierwszaDosylka.current = false
+      return
+    }
+    const id = window.setTimeout(() => void wyslij(stanRef.current), 2000)
+    return () => window.clearTimeout(id)
+  }, [dopisek, podpis, krok.rodzaj])
+
+  /**
+   * Przycisk „Wstecz" ZDEJMUJE wpis z historii, zamiast dokładać nowy.
+   * Wcześniej wołał `idzDo()`, które robi `pushState` — po kilku przejściach
+   * tam i z powrotem historia puchła, a systemowe cofnięcie przenosiło
+   * uczestnika do przodu, bo taki wpis był najnowszy.
+   */
   const wstecz = () => {
     if (krok.rodzaj !== 'sekcja') return
-    if (krok.index === 0) setKrok({ rodzaj: 'intro' })
-    else idzDo(krok.index - 1)
+    window.history.back()
   }
 
   // Do testów: `resetAnkiety()` w konsoli przeglądarki czyści stan i wraca na
@@ -399,15 +574,25 @@ export default function SurveyFlow() {
                 </p>
               )}
 
-              {/* pytania — kaskada 60 ms na pozycję */}
+              {/* pytania — kaskada 60 ms na pozycję. Pytania z własnym
+                  warunkiem znikają, gdy przestaje być spełniony (np. o ocenę
+                  jury nie pytamy kogoś, kogo nie było na finale). */}
               <div className="mt-6 flex flex-col gap-3.5">
-                {sekcje[krok.index].pytania.map((p, i) => (
+                {sekcje[krok.index].pytania
+                  .filter((p) => spelniony(p.pokaz_jesli, stan.odpowiedzi))
+                  .map((p, i) => (
                   <motion.div
                     key={p.id}
+                    id={`pytanie-${p.id}`}
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...SPRING, delay: i * 0.06 }}
-                    className="rounded-md border border-[#3B3121]/10 bg-white p-4 shadow-[0_3px_16px_-10px_rgba(59,49,33,0.35)]"
+                    className={cn(
+                      'rounded-md border bg-white p-4 transition-shadow',
+                      brakujacePytanie === p.id
+                        ? 'border-[#C9A14A] shadow-[0_0_0_3px_rgba(201,161,74,0.18)]'
+                        : 'border-[#3B3121]/10 shadow-[0_3px_16px_-10px_rgba(59,49,33,0.35)]',
+                    )}
                   >
                     <div className="mb-4 flex items-start gap-3">
                       {p.zdjecie && (
@@ -488,9 +673,15 @@ export default function SurveyFlow() {
                     ? `, ${stan.intro.imieNazwisko.trim().split(' ')[0]}`
                     : ''}
                 </h2>
+                {/* Bez skonfigurowanej wysyłki odpowiedzi zostają wyłącznie na
+                    telefonie uczestnika. Nie wolno wtedy twierdzić, że zostały
+                    zapisane — to samo zdanie zobaczyłoby 300 osób, gdyby ktoś
+                    kiedyś przegapił ponowne zbudowanie aplikacji po zmianie
+                    konfiguracji. */}
                 <p className="mt-3 max-w-[20rem] text-[14.5px] leading-relaxed text-[#6B5D42]">
-                  Twoje odpowiedzi zostały zapisane. Pomogą nam zbudować jeszcze
-                  lepszą edycję Masterclass Leadership.
+                  {wysylkaSkonfigurowana
+                    ? 'Twoje odpowiedzi zostały zapisane. Pomogą nam zbudować jeszcze lepszą edycję Masterclass Leadership.'
+                    : 'Dziękujemy za wypełnienie ankiety. Twoje odpowiedzi pomogą nam zbudować jeszcze lepszą edycję Masterclass Leadership.'}
                 </p>
 
                 {/* Stan wysyłki. Pokazujemy tylko wtedy, gdy jest co pokazać:
@@ -510,9 +701,9 @@ export default function SurveyFlow() {
                     )}
                     {status === 'blad' && (
                       <div className="rounded-md border border-[#C9A14A]/40 bg-[#FBF3DF] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-[#8A6A1E]">
-                        Nie udało się wysłać, prawdopodobnie przez połączenie.
-                        Odpowiedzi są bezpieczne na tym urządzeniu i wyślemy je
-                        automatycznie, gdy internet wróci.
+                        Nie udało się teraz wysłać. Odpowiedzi są bezpieczne na
+                        tym urządzeniu i wyślemy je automatycznie, gdy tylko się
+                        uda. Możesz spokojnie zamknąć stronę.
                         <button
                           type="button"
                           onClick={() => void wyslij()}

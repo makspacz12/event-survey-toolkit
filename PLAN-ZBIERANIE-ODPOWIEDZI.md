@@ -106,7 +106,7 @@ pojawia się w arkuszu. Test na 5 osobach przed publikacją QR-kodu.
 | Ktoś zamknie kartę w połowie | odpowiedzi już są w localStorage, wraca do tego samego miejsca |
 | Podwójne wypełnienie | identyfikator sesji w osobnej kolumnie |
 | Ktoś zaspamuje formularz | token w adresie, pole pułapka, arkusz i tak widzi wszystko |
-| Awaria po stronie Google | uczestnik nadal ma przycisk „Pobierz swoje odpowiedzi” |
+| Awaria po stronie Google | aplikacja widzi odmowę zapisu, odkłada odpowiedź do kolejki i ponawia sama |
 | Zgubiony arkusz | Dysk Google trzyma historię wersji |
 
 ## Czy odpowiedzi mogą się nadpisać?

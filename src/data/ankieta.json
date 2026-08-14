@@ -63,10 +63,10 @@
           "id": "pt-integracja",
           "typ": "skala",
           "tresc": "Jak oceniasz spotkanie integracyjne (Opatówka, robot Barbara i twórcy z AGH)?",
-          "zdjecie": "/prelegenci/robot-barbara.jpg",
           "min": 1,
           "max": 10,
-          "nieobecnosc": true
+          "nieobecnosc": true,
+          "zdjecie": "/prelegenci/robot-barbara.jpg"
         }
       ]
     },
@@ -252,8 +252,8 @@
         {
           "id": "kk-uwagi",
           "typ": "tekst",
-          "tresc": "Co zmieniłbyś(-abyś) w formule konkursu?",
-          "placeholder": "Twoje sugestie…"
+          "tresc": "Jak oceniasz konkurs i co warto w nim zmienić?",
+          "placeholder": "Twoja opinia o konkursie, pomysły na usprawnienia, co zmienić w formule…"
         }
       ]
     },
@@ -272,13 +272,19 @@
           "typ": "skala",
           "tresc": "Jak oceniasz finał „Sprzedaj mi swoją wizję w windzie” (13 prezentacji po 5 minut)?",
           "min": 1,
-          "max": 10
+          "max": 10,
+          "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie brałem(-am) udziału"
         },
         {
           "id": "fn-jury",
           "typ": "tak_nie",
           "tresc": "Czy sposób oceniania przez jury był dla Ciebie zrozumiały?",
-          "komentarz": true
+          "komentarz": true,
+          "pokaz_jesli": {
+            "pytanie": "fn-final",
+            "rozne_od": "nieobecny"
+          }
         }
       ]
     },

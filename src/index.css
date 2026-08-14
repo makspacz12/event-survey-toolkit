@@ -20,7 +20,10 @@ body,
 body {
   background-color: #070a12;
   color: #f8fafc;
-  font-family: 'Inter', system-ui, sans-serif;
+  /* Krój z tailwind.config.js. Wcześniej był tu Inter — kroju, którego
+     projekt w ogóle nie ładuje — więc treść pytań renderowała się fontem
+     systemowym zamiast Outfit. */
+  font-family: 'Outfit', system-ui, sans-serif;
   overflow-x: hidden;
   overscroll-behavior-y: none;
   /* Strony z nadmiarem treści przewijają się (pojawiają się paski) */
@@ -74,6 +77,25 @@ body {
 @keyframes shimmer-sweep {
   100% {
     transform: translateX(100%);
+  }
+}
+
+/* Ścieżki w tle landingu. Animacja przez stroke-dashoffset zamiast
+   JavaScriptu — przeglądarka liczy ją poza głównym wątkiem, więc nie
+   konkuruje o CPU ze sceną 3D ani z przewijaniem. */
+.sciezka-tla {
+  stroke-dasharray: 260 1400;
+  animation-name: plyn;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes plyn {
+  from {
+    stroke-dashoffset: 1660;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 

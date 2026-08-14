@@ -57,7 +57,10 @@ ankiety lecą do arkusza Google. Bez internetu trafiają do kolejki i wysyłają
 same, gdy połączenie wróci.
 
 Konfiguracja: `.env.local` (dwie wartości — adres wdrożenia skryptu i hasło).
-Instrukcja wdrożenia po stronie Google: **`apps-script/JAK-WDROZYC.md`**.
+Instrukcja wdrożenia po stronie Google: **`INSTRUKCJA-DLA-CTN.md`** — ten sam
+dokument wysyła się osobie z fundacji, która zakłada arkusz. Zawiera kopię
+`apps-script/Kod.gs`; po każdej zmianie skryptu odśwież ją poleceniem
+`npm run odswiez-instrukcje`.
 
 Aplikacja nie ma żadnych poświadczeń Google. Skrypt Apps Script działa na koncie
 właściciela arkusza i to on ma prawo zapisu.
@@ -78,7 +81,7 @@ src/
   lib/
     storage.ts               ← zapis stanu w przeglądarce
     wyslij.ts                ← wysyłka do arkusza + kolejka offline
-    eksport.ts               ← pobranie własnych odpowiedzi jako Excel
+  components/GranicaBledu.tsx ← komunikat zamiast białej strony, gdy coś padnie
 apps-script/                 ← kod i instrukcja dla strony Google
 scripts/                     ← narzędzia uruchamiane przez npm run
 DESIGN.md                    ← zasady wyglądu (kolory, kroje, zakazy)

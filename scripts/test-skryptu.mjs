@@ -89,14 +89,39 @@ function utworzPlik() {
 
 const plik = utworzPlik()
 let bledyKonsoli = []
+let pamiecPodreczna = {}
 
 const srodowisko = {
   SpreadsheetApp: {
+    // Domyślna ścieżka z instrukcji: skrypt powstał z wnętrza arkusza
+    // (Rozszerzenia → Apps Script), więc jest do niego przypięty i stała
+    // ID_ARKUSZA zostaje pusta. Osobny test niżej sprawdza drugą ścieżkę,
+    // czyli projekt samodzielny z wpisanym identyfikatorem.
     openById: () => plik,
-    getActiveSpreadsheet: () => null, // jak w projekcie samodzielnym
+    getActiveSpreadsheet: () => plik,
   },
   LockService: {
-    getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }),
+    // `tryLock` zwraca true/false zamiast rzucać wyjątkiem — skrypt korzysta
+    // z tej wersji, żeby przy tłoku odpowiedzieć błędem zamiast się wywalić.
+    getScriptLock: () => ({
+      tryLock: () => true,
+      waitLock: () => {},
+      releaseLock: () => {},
+    }),
+  },
+  // Pamięć podręczna nagłówków. Atrapa musi zachowywać się jak prawdziwa:
+  // przechowywać wartość między wywołaniami, bo właśnie na tym polega
+  // oszczędność, którą testujemy.
+  CacheService: {
+    getScriptCache: () => ({
+      get: (k) => (k in pamiecPodreczna ? pamiecPodreczna[k] : null),
+      put: (k, v) => {
+        pamiecPodreczna[k] = v
+      },
+      remove: (k) => {
+        delete pamiecPodreczna[k]
+      },
+    }),
   },
   Utilities: {
     formatDate: () => '2026-10-18 19:12:04',
@@ -252,6 +277,91 @@ console.log('\n8. Funkcja testZapisu (przycisk Uruchom w edytorze)')
 skrypt.testZapisu()
 sprawdz('dopisała wiersz', arkusz.dane.length === 7)
 sprawdz('oznaczony jako testowy', String(arkusz.dane[6][2]).includes('TEST'))
+
+/* 9. Pamięć podręczna nagłówków */
+console.log('\n9. Pamięć podręczna nagłówków')
+sprawdz(
+  'nagłówki wylądowały w pamięci podręcznej',
+  Object.keys(pamiecPodreczna).length > 0,
+  Object.keys(pamiecPodreczna).join(', '),
+)
+const zCache = JSON.parse(Object.values(pamiecPodreczna)[0] || '[]')
+sprawdz(
+  'zapamiętana lista zgadza się z arkuszem',
+  zCache.length === arkusz.dane[0].length && zCache[4] === 'nps',
+  `${zCache.length} vs ${arkusz.dane[0].length}`,
+)
+// Najgroźniejszy błąd pamięci podręcznej: nieaktualna lista przy dopisanej
+// kolumnie. Podstawiamy skróconą listę i sprawdzamy, czy skrypt to wykryje
+// i mimo to zapisze odpowiedź we właściwych kolumnach.
+const kluczCache = Object.keys(pamiecPodreczna)[0]
+pamiecPodreczna[kluczCache] = JSON.stringify(zCache.slice(0, 3))
+const poNieaktualnym = wynik(
+  post({
+    token: skrypt.TOKEN,
+    sesja: 'sesja-cache',
+    kto: 'anonimowo',
+    odpowiedzi: { nps: '4', 'org-jedzenie': '4' },
+    etykiety: { nps: 'Polecisz znajomemu?', 'org-jedzenie': 'Jak oceniasz jedzenie?' },
+  }),
+)
+sprawdz('zapis mimo nieaktualnej pamięci podręcznej', poNieaktualnym.ok === true)
+const ostatni = arkusz.dane[arkusz.dane.length - 1]
+sprawdz('odpowiedź trafiła do właściwej kolumny', ostatni[4] === '4', String(ostatni[4]))
+sprawdz(
+  'kolumny się nie rozmnożyły',
+  arkusz.dane[0].length === zCache.length,
+  `${arkusz.dane[0].length} vs ${zCache.length}`,
+)
+
+/* 10. Druga ścieżka wdrożenia: projekt samodzielny z ID_ARKUSZA */
+console.log('\n10. Projekt samodzielny (wpisany ID_ARKUSZA)')
+// Instrukcja dopuszcza dwa warianty i oba muszą działać. Tu podmieniamy w
+// źródle pustą stałą na identyfikator i odcinamy getActiveSpreadsheet, czyli
+// dokładnie sytuację skryptu utworzonego spoza arkusza.
+const plikSamodzielny = utworzPlik()
+const zrodloZId = zrodlo.replace(
+  /const ID_ARKUSZA = ''/,
+  "const ID_ARKUSZA = '1AbCdEf_przykladowy_identyfikator'",
+)
+sprawdz(
+  'stała ID_ARKUSZA jest domyślnie pusta',
+  zrodloZId !== zrodlo,
+  'nie znaleziono wzorca — sprawdź wartość domyślną w Kod.gs',
+)
+const srodowiskoSamodzielne = {
+  ...srodowisko,
+  SpreadsheetApp: {
+    openById: () => plikSamodzielny,
+    getActiveSpreadsheet: () => null, // skrypt nie jest przypięty do arkusza
+  },
+}
+const skryptSamodzielny = new Function(
+  ...Object.keys(srodowiskoSamodzielne),
+  `${zrodloZId}\n;return { doPost, ARKUSZ };`,
+)(...Object.values(srodowiskoSamodzielne))
+pamiecPodreczna = {}
+const samodzielny = wynik(
+  skryptSamodzielny.doPost({
+    postData: {
+      contents: JSON.stringify({
+        token: skrypt.TOKEN,
+        sesja: 'sesja-samodzielna',
+        kto: 'anonimowo',
+        odpowiedzi: { nps: '10' },
+        etykiety: { nps: 'Polecisz znajomemu?' },
+      }),
+    },
+  }),
+)
+sprawdz('zapis działa też w tym wariancie', samodzielny.ok === true, JSON.stringify(samodzielny))
+const arkuszSamodzielny = plikSamodzielny.zakladki.get(skryptSamodzielny.ARKUSZ)
+sprawdz('powstała zakładka w otwartym pliku', Boolean(arkuszSamodzielny))
+sprawdz(
+  'odpowiedź zapisana',
+  Boolean(arkuszSamodzielny) && arkuszSamodzielny.dane.length === 3,
+  arkuszSamodzielny ? String(arkuszSamodzielny.dane.length) : 'brak zakładki',
+)
 
 /* ------------------------------------------------------- podsumowanie --- */
 

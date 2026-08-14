@@ -2,9 +2,11 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import LandingPage from '@/components/LandingPage'
 import { PhoneFrame } from '@/components/PhoneFrame'
+import { GranicaBledu } from '@/components/GranicaBledu'
 
 // Ankieta lazy — błąd w jej imporcie nigdy nie może położyć landingu.
-const SurveyFlow = lazy(() => import('@/components/survey/SurveyFlow'))
+const wczytajAnkiete = () => import('@/components/survey/SurveyFlow')
+const SurveyFlow = lazy(wczytajAnkiete)
 
 /**
  * Routing po hashu (bez biblioteki, jak w prototypie):
@@ -41,6 +43,32 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  /**
+   * Ankietę ściągamy w tle już na ekranie startowym, zamiast czekać na
+   * kliknięcie „Start”. Uczestnik czyta wtedy wstęp i ogląda robota, więc te
+   * kilkadziesiąt kilobajtów zdąży dojść niezauważenie. Gdy później zabraknie
+   * zasięgu, ankieta i tak się otworzy — jest już w pamięci przeglądarki.
+   *
+   * `requestIdleCallback` odkłada pobranie na moment, w którym przeglądarka
+   * nie ma nic pilniejszego, żeby nie konkurować z pierwszym wyświetleniem.
+   */
+  useEffect(() => {
+    if (route === 'ankieta') return
+    const pobierz = () => {
+      void wczytajAnkiete().catch(() => {
+        // Brak sieci teraz nic nie psuje: spróbujemy jeszcze raz przy Starcie,
+        // a gdyby i wtedy się nie udało, złapie to GranicaBledu.
+      })
+    }
+    const idle = window.requestIdleCallback
+    if (idle) {
+      const id = idle(pobierz, { timeout: 2500 })
+      return () => window.cancelIdleCallback?.(id)
+    }
+    const id = window.setTimeout(pobierz, 1200)
+    return () => window.clearTimeout(id)
+  }, [route])
+
   return (
     <PhoneFrame>
       <AnimatePresence mode="wait">
@@ -52,9 +80,11 @@ export default function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
-            <Suspense fallback={<RouteLoader />}>
-              <SurveyFlow />
-            </Suspense>
+            <GranicaBledu>
+              <Suspense fallback={<RouteLoader />}>
+                <SurveyFlow />
+              </Suspense>
+            </GranicaBledu>
           </motion.div>
         ) : (
           <motion.div

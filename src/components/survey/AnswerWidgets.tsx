@@ -163,15 +163,41 @@ function RulerScale({
         </span>
       </div>
 
-      {/* Linijka: klik LUB przeciągnięcie (pointer events + capture).
-          touch-action: none → palec przeciąga po skali zamiast scrollować. */}
+      {/* Linijka: klik, przeciągnięcie ORAZ klawiatura.
+          touch-action: none → palec przeciąga po skali zamiast scrollować.
+          role="slider" + strzałki: bez tego osoba bez myszy nie odpowie na
+          pytanie wymagane, więc w ogóle nie wyśle ankiety. */}
       <div
         ref={trackRef}
+        role="slider"
+        tabIndex={absent ? -1 : 0}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={num ?? undefined}
+        aria-valuetext={
+          num == null ? 'brak oceny' : `${num} z ${max}`
+        }
+        aria-label={`Ocena w skali od ${min} do ${max}`}
+        onKeyDown={(e) => {
+          if (absent) return
+          const teraz = num ?? min
+          if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            onChange(Math.min(teraz + 1, max))
+          } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+            e.preventDefault()
+            onChange(Math.max(teraz - 1, min))
+          } else if (e.key === 'Home') {
+            e.preventDefault()
+            onChange(min)
+          } else if (e.key === 'End') {
+            e.preventDefault()
+            onChange(max)
+          }
+        }}
         className={cn(
-          'relative h-12 select-none',
-          absent
-            ? 'pointer-events-none opacity-30'
-            : 'cursor-pointer',
+          'relative h-12 select-none rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A14A] focus-visible:ring-offset-2',
+          absent ? 'pointer-events-none opacity-30' : 'cursor-pointer',
         )}
         style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
@@ -180,9 +206,17 @@ function RulerScale({
           onChange(valueFromClientX(e.clientX))
         }}
         onPointerMove={(e) => {
-          if (draggingRef.current) onChange(valueFromClientX(e.clientX))
-          else if (e.pointerType === 'mouse')
-            setHover(valueFromClientX(e.clientX))
+          if (draggingRef.current) {
+            // Palec w czasie jednego przeciągnięcia wysyła ponad sto zdarzeń,
+            // a ocena zmienia się przy nich najwyżej dziesięć razy. Bez tego
+            // porównania każde drgnięcie przerysowywałoby całą sekcję —
+            // na słabszym telefonie właśnie tak powstaje wrażenie klejenia.
+            const nowa = valueFromClientX(e.clientX)
+            if (nowa !== value) onChange(nowa)
+          } else if (e.pointerType === 'mouse') {
+            const podglad = valueFromClientX(e.clientX)
+            if (podglad !== hover) setHover(podglad)
+          }
         }}
         onPointerUp={() => {
           draggingRef.current = false

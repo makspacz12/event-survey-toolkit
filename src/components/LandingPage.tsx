@@ -89,12 +89,12 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 1.0, ease: [0.22, 1, 0.36, 1] }}
         >
-          <ActionButton
-            variant="gold"
-            label="Start"
-            sublabel="rozpocznij ankietę · ok. 5 minut"
-            onClick={onStart}
-          />
+          <ActionButton variant="gold" label="Start" onClick={onStart} />
+          {/* Podpis pod przyciskiem, nie w nim: mówi wprost, co się stanie
+              po kliknięciu, i ile to zajmie. */}
+          <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-slate-400/70">
+            Start rozpocznie ankietę. Zajmie około 5 minut.
+          </p>
         </motion.div>
       </div>
     </div>

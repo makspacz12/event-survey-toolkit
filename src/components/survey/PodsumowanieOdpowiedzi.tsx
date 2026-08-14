@@ -13,14 +13,25 @@ const ANKIETA = ankietaJson as Ankieta
  * odpowiedział, i bez sekcji, których nie widział.
  */
 
-function widoczna(sekcja: Sekcja, odpowiedzi: Record<string, Wartosc>): boolean {
-  const w: Warunek | undefined = sekcja.pokaz_jesli
+/** Ten sam warunek co w przepływie ankiety: sekcje i pojedyncze pytania. */
+function spelniony(
+  w: Warunek | undefined,
+  odpowiedzi: Record<string, Wartosc>,
+): boolean {
   if (!w) return true
   const wartosc = odpowiedzi[w.pytanie]
   if (w.rowne != null) return wartosc === w.rowne
   if (w.zawiera != null)
     return Array.isArray(wartosc) && wartosc.includes(w.zawiera)
+  if (w.rozne_od != null) {
+    if (wartosc == null || wartosc === '') return false
+    return wartosc !== w.rozne_od
+  }
   return true
+}
+
+function widoczna(sekcja: Sekcja, odpowiedzi: Record<string, Wartosc>): boolean {
+  return spelniony(sekcja.pokaz_jesli, odpowiedzi)
 }
 
 /** Odpowiedź w formie do pokazania. `null` = pominięta, nie wyświetlamy. */
@@ -45,6 +56,7 @@ export function PodsumowanieOdpowiedzi({
     .map((s) => ({
       sekcja: s,
       pozycje: s.pytania
+        .filter((p) => spelniony(p.pokaz_jesli, odpowiedzi))
         .map((p) => ({ pytanie: p, tekst: sformatuj(p, odpowiedzi[p.id] ?? null) }))
         .filter((x) => x.tekst !== null),
     }))

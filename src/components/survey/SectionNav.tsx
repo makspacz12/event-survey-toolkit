@@ -75,7 +75,9 @@ export function SectionNav({
               aria-label={`Przejdź do: ${seg.pelna}`}
               aria-current={jestAktywny ? 'step' : undefined}
               className={cn(
-                'group relative py-2',
+                // py-3 zamiast py-2: sama kreska ma 3 px, więc bez zapasu
+                // obszar dotykowy miał ~18 px i trudno było w niego trafić.
+                'group relative rounded py-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A14A]',
                 // Segment „Przedstawienie" jest węższy: to krótki krok, nie
                 // pełnoprawna sekcja z pytaniami.
                 seg.indeks === INTRO ? 'w-6 shrink-0' : 'flex-1',

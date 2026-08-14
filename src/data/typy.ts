@@ -39,16 +39,27 @@ export interface Pytanie {
   komentarz?: boolean
   /** zdjęcie ilustrujące pytanie (okrągły awatar obok treści), np. prelegent */
   zdjecie?: string
+  /**
+   * Pokaż pytanie tylko przy określonej odpowiedzi na wcześniejsze pytanie.
+   * Działa jak `pokaz_jesli` sekcji, ale dla jednego pytania — np. o ocenę
+   * jury pytamy tylko tego, kto w ogóle był na finale.
+   */
+  pokaz_jesli?: Warunek
 }
 
 /**
- * Warunek pokazania sekcji. Przykład: sekcję „Piątek" pokazujemy tylko temu,
- * kto w pytaniu `obecnosc` zaznaczył „Piątek (16.10)".
+ * Warunek pokazania sekcji ALBO pojedynczego pytania.
+ *
+ * Przykłady:
+ *  • sekcję „Piątek" widzi ten, kto zaznaczył „Piątek (16.10)" → `zawiera`
+ *  • pytanie o jury widzi ten, kto ocenił finał, czyli NIE zaznaczył
+ *    „nie było mnie" → `rozne_od: "nieobecny"`
  */
 export interface Warunek {
   pytanie: string // id pytania filtrującego
   rowne?: string // odpowiedź musi być dokładnie taka (jeden_wybor / tak_nie)
   zawiera?: string // odpowiedź-lista musi zawierać tę opcję (wiele_wyborow)
+  rozne_od?: string // odpowiedź musi być inna niż podana (i już udzielona)
 }
 
 export interface Sekcja {

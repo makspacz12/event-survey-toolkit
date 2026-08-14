@@ -66,18 +66,32 @@ Zapisz (`Ctrl+S`).
 Na samej górze wklejonego kodu są dwie wartości do podmiany. To jedyne miejsce,
 które ruszasz.
 
-**Hasło** — wymyśl własne, na przykład `ml2026-tyniec-7k3m`:
+**Hasło** — wpisz dokładnie `masterclass`. Znajdź linijkę:
 
 ```javascript
 const TOKEN = 'WPISZ-WLASNE-HASLO'
 ```
 
-Nie musisz go pamiętać, ale **zapisz je gdzieś** — odsyłasz je na końcu.
-
-**Identyfikator arkusza** — ten skopiowany w kroku 2:
+i zmień ją na:
 
 ```javascript
-const ID_ARKUSZA = 'WPISZ-ID-ARKUSZA'
+const TOKEN = 'masterclass'
+```
+
+> Aplikacja jest już ustawiona na to hasło, więc musi się zgadzać co do znaku —
+> małe litery, bez spacji. Gdyby się różniło, arkusz odrzuci każdą odpowiedź.
+
+**Identyfikator arkusza** — ten skopiowany w kroku 2. Znajdź linijkę z pustymi
+apostrofami:
+
+```javascript
+const ID_ARKUSZA = ''
+```
+
+i wklej identyfikator pomiędzy nie:
+
+```javascript
+const ID_ARKUSZA = '1AbC...XyZ'
 ```
 
 Zapisz ponownie (`Ctrl+S`).
@@ -127,7 +141,7 @@ Kliknij **Wdróż**. Google pokaże adres kończący się na `/exec`. Skopiuj go
 
 ## Co odesłać
 
-Trzy rzeczy:
+Dwie rzeczy:
 
 **1. Adres aplikacji internetowej** (z kroku 6, kończy się na `/exec`)
 
@@ -135,20 +149,17 @@ Trzy rzeczy:
 https://script.google.com/macros/s/AKfycb.../exec
 ```
 
-**2. Hasło, które wymyśliłeś** (z kroku 4, wpisane jako `TOKEN`)
-
-```
-ml2026-tyniec-7k3m
-```
-
-**3. Link do arkusza** — żebym mógł sprawdzić, czy odpowiedzi dochodzą.
+**2. Link do arkusza** — żebym mógł sprawdzić, czy odpowiedzi dochodzą.
 Wystarczy dostęp do podglądu.
 
 ```
 https://docs.google.com/spreadsheets/d/...
 ```
 
-Po otrzymaniu tych trzech rzeczy podłączam ankietę i odsyłam link do
+Hasła nie odsyłasz — jest z góry ustalone (`masterclass`) i takie samo po obu
+stronach.
+
+Po otrzymaniu tych dwóch rzeczy podłączam ankietę i odsyłam link do
 przetestowania.
 
 ---
@@ -160,6 +171,7 @@ przetestowania.
 | Błąd o `postData` | Uruchomiłeś funkcję `doPost` zamiast `testZapisu`. Zmień wybór na liście przy przycisku Uruchom. |
 | Ostrzeżenie o niezweryfikowanej aplikacji | Normalne dla własnych skryptów. *Zaawansowane* → *Przejdź do…* |
 | Zakładka „Odpowiedzi" nie powstała | Najczęściej pusty albo błędny `ID_ARKUSZA`. Sprawdź krok 2 i 4. |
+| W arkuszu nic się nie pojawia, choć ludzie wypełniają | Najczęściej hasło różni się o znak. W kodzie ma być dokładnie `masterclass`. |
 | Zmieniłeś kod i nic się nie dzieje | Po każdej zmianie trzeba opublikować nową wersję: *Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa*. |
 
 W edytorze skryptu zakładka **Wykonania** pokazuje każdą próbę zapisu razem z
@@ -176,7 +188,8 @@ Odpowiedzi trafiają wyłącznie do tego arkusza, na koncie fundacji.
   QR, wypełnia, gotowe.
 - Jeden wiersz to jedna wypełniona ankieta, jedna kolumna to jedno pytanie.
 - **Excel** pobierasz z menu *Plik → Pobierz → Microsoft Excel (.xlsx)*.
-- Druga zakładka z podsumowaniem policzy średnie ocen sama.
+- Skrypt tworzy jedną zakładkę, `Odpowiedzi`. Średnie ocen liczycie już po
+  swojemu, w arkuszu albo w Excelu, na przykład funkcją `ŚREDNIA`.
 
 ---
 
@@ -231,7 +244,7 @@ const TOKEN = 'WPISZ-WLASNE-HASLO'
  *                                  └────┬────┘
  *                                    to wklej
  */
-const ID_ARKUSZA = 'WPISZ-ID-ARKUSZA'
+const ID_ARKUSZA = ''
 
 /** Nazwa zakładki z odpowiedziami. Zostanie utworzona, jeśli jej nie ma. */
 const ARKUSZ = 'Odpowiedzi'
@@ -285,12 +298,31 @@ function doPost(e) {
 
     // Blokada: zapisy ustawiają się w kolejce, więc dwie osoby wysyłające
     // w tej samej chwili nie trafią do tego samego wiersza.
+    //
+    // Czekamy 120 s, nie 30. Przy szczycie (mail do wszystkich naraz) kolejka
+    // bywa długa, a odrzucenie oznacza CICHĄ UTRATĘ odpowiedzi: przeglądarka
+    // wysyła w trybie bez odczytu odpowiedzi, więc aplikacja nie dowie się
+    // o błędzie. Lepiej, żeby uczestnik poczekał, niż żeby stracił ankietę.
+    // Limit czasu wykonania skryptu to 6 minut, więc 120 s mieści się z zapasem.
     const lock = LockService.getScriptLock()
-    lock.waitLock(30000)
+    if (!lock.tryLock(120000)) {
+      console.error('Nie udało się uzyskać blokady w 120 s — zapis pominięty.')
+      return odpowiedz({ ok: false, blad: 'kolejka-przepelniona' })
+    }
     try {
       zapisz(dane)
     } finally {
       lock.releaseLock()
+    }
+
+    // Oznaczanie wcześniejszych wysyłek tej samej osoby wymaga przeczytania
+    // kolumny z identyfikatorami — to najdroższa operacja w całym zapisie.
+    // Robimy ją PO zwolnieniu blokady, żeby nie blokować kolejnych osób.
+    // Kolejność wierszy jest już ustalona, więc nic to nie psuje.
+    try {
+      oznaczPoprzednie(pobierzArkusz(), dane.sesja)
+    } catch (err) {
+      console.error('Oznaczanie poprzednich nie powiodło się: ' + err)
     }
 
     return odpowiedz({ ok: true })
@@ -301,10 +333,21 @@ function doPost(e) {
   }
 }
 
-/** Zapis pojedynczej ankiety jako jeden wiersz. */
+/**
+ * Zapis pojedynczej ankiety jako jeden wiersz.
+ *
+ * SZYBKOŚĆ MA ZNACZENIE. Każde wywołanie Sheets API to około 0,2–0,5 s, a
+ * wszystkie zapisy stoją w jednej kolejce (blokada w `doPost`). Gdy jeden
+ * zapis trwa 2 s, to przy 50 osobach klikających naraz ostatnie czekają ponad
+ * 30 s i wypadają z blokady — ich odpowiedzi przepadają. Test obciążenia
+ * pokazał dokładnie to: 22 zapisy na 50 prób.
+ *
+ * Dlatego w sekcji krytycznej robimy MINIMUM: odczyt nagłówków (z pamięci
+ * podręcznej) i dopisanie wiersza. Wszystko inne dzieje się poza blokadą.
+ */
 function zapisz(dane) {
   const arkusz = pobierzArkusz()
-  const naglowki = pobierzNaglowki(arkusz)
+  let naglowki = naglowkiZCache(arkusz)
 
   // Nowe pytania (np. dodane w trakcie zbierania) dostają kolumnę na końcu.
   // Starsze wiersze mają w niej pusto i to jest zgodne z prawdą: tamte osoby
@@ -314,12 +357,17 @@ function zapisz(dane) {
   )
   if (brakujace.length > 0) {
     dodajKolumny(arkusz, naglowki, brakujace, dane.etykiety || {})
+    naglowki = naglowki.concat(brakujace)
+    zapiszNaglowkiWCache(naglowki)
   }
 
-  const aktualne = pobierzNaglowki(arkusz)
-  const wiersz = aktualne.map((id) => {
-    if (id === 'Data wysłania')
-      return Utilities.formatDate(new Date(), 'Europe/Warsaw', 'yyyy-MM-dd HH:mm:ss')
+  const czas = Utilities.formatDate(
+    new Date(),
+    'Europe/Warsaw',
+    'yyyy-MM-dd HH:mm:ss',
+  )
+  const wiersz = naglowki.map(function (id) {
+    if (id === 'Data wysłania') return czas
     if (id === 'Identyfikator sesji') return dane.sesja || ''
     if (id === 'Kto wypełnił') return dane.kto || 'anonimowo'
     if (id === 'Wersja ankiety') return dane.wersja || ''
@@ -328,7 +376,46 @@ function zapisz(dane) {
   })
 
   arkusz.appendRow(wiersz)
-  oznaczPoprzednie(arkusz, dane.sesja)
+}
+
+/** Klucz pamięci podręcznej nagłówków. */
+const CACHE_NAGLOWKI = 'naglowki-v1'
+
+/**
+ * Nagłówki z pamięci podręcznej skryptu. Pierwszy zapis po starcie czyta je
+ * z arkusza, kolejne przez 6 godzin biorą gotową listę — to oszczędza jedno
+ * wywołanie Sheets API na każdą wysyłkę.
+ *
+ * Pamięć jest wspólna dla wszystkich wykonań skryptu, więc dopisanie kolumny
+ * przez jedno wykonanie jest od razu widoczne dla pozostałych.
+ */
+function naglowkiZCache(arkusz) {
+  try {
+    const cache = CacheService.getScriptCache()
+    const zapisane = cache.get(CACHE_NAGLOWKI)
+    if (zapisane) {
+      const lista = JSON.parse(zapisane)
+      if (lista && lista.length >= KOLUMNY_STALE.length) return lista
+    }
+    const swieze = pobierzNaglowki(arkusz)
+    cache.put(CACHE_NAGLOWKI, JSON.stringify(swieze), 21600)
+    return swieze
+  } catch (err) {
+    // Awaria pamięci podręcznej nie może wywrócić zapisu.
+    return pobierzNaglowki(arkusz)
+  }
+}
+
+function zapiszNaglowkiWCache(naglowki) {
+  try {
+    CacheService.getScriptCache().put(
+      CACHE_NAGLOWKI,
+      JSON.stringify(naglowki),
+      21600,
+    )
+  } catch (err) {
+    /* trudno, następnym razem odczytamy z arkusza */
+  }
 }
 
 /**

@@ -140,23 +140,37 @@ function zapiszKolejke(kolejka: unknown[]) {
 /**
  * Pojedyncza próba wysyłki.
  *
- * `Content-Type: text/plain` jest tu celowe: Apps Script nie odpowiada na
- * zapytania wstępne CORS (preflight), a nagłówek `application/json` takie
- * zapytanie wymusza. Tekst omija problem, a skrypt i tak parsuje JSON.
+ * DWIE RZECZY, KTÓRE MUSZĄ TU ZOSTAĆ:
+ *
+ * 1. `Content-Type: text/plain` — Apps Script nie odpowiada na zapytania
+ *    wstępne CORS (preflight), a `application/json` takie zapytanie wymusza.
+ *    Zwykły tekst omija problem, a skrypt i tak parsuje JSON.
+ *
+ * 2. `mode: 'no-cors'` — Google nie odpowiada bezpośrednio, tylko przekierowuje
+ *    na `script.googleusercontent.com`. Przeglądarka pozwala tam wysłać dane,
+ *    ale zabrania odczytać odpowiedź z obcej domeny. Bez tego trybu `fetch`
+ *    kończy się wyjątkiem MIMO UDANEGO ZAPISU, aplikacja raportuje błąd,
+ *    wrzuca wysyłkę do kolejki i ponawia ją przy każdym otwarciu strony,
+ *    zasypując arkusz duplikatami.
+ *
+ * Kosztem trybu `no-cors` jest odpowiedź „nieprzezroczysta”: nie znamy statusu
+ * ani treści. Brak wyjątku traktujemy więc jako sukces — to wystarcza, bo
+ * jedyny realny powód niepowodzenia (brak sieci) wyjątek rzuca.
  */
 async function wyslijRaz(dane: unknown): Promise<boolean> {
   if (!URL) return false
   try {
-    const odp = await fetch(URL, {
+    await fetch(URL, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(dane),
       redirect: 'follow',
     })
-    if (!odp.ok) return false
-    const wynik = await odp.json().catch(() => null)
-    return wynik ? wynik.ok === true : true
+    return true
   } catch {
+    // Najczęściej brak połączenia. Ładunek trafi do kolejki i spróbujemy
+    // ponownie, gdy sieć wróci.
     return false
   }
 }

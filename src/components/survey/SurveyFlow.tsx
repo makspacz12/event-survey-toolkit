@@ -10,9 +10,9 @@ import {
   type StanAnkiety,
 } from '@/lib/storage'
 import { PytanieRenderer } from '@/components/survey/AnswerWidgets'
+import { PodsumowanieOdpowiedzi } from '@/components/survey/PodsumowanieOdpowiedzi'
 import { INTRO, SectionNav } from '@/components/survey/SectionNav'
 import { IkonaCheck, IkonaPlus } from '@/components/ui/icons'
-import { eksportujOdpowiedzi } from '@/lib/eksport'
 import {
   ileWKolejce,
   oproznijKolejke,
@@ -208,12 +208,17 @@ export default function SurveyFlow() {
     else idzDo(krok.index - 1)
   }
 
-  const odNowa = () => {
-    wyczyscStan()
-    setStan(pustyStan)
-    setPodpisOtwarty(false)
-    setKrok({ rodzaj: 'intro' })
-  }
+  // Do testów: `resetAnkiety()` w konsoli przeglądarki czyści stan i wraca na
+  // początek. Uczestnik nie ma takiego przycisku — po wysłaniu odpowiedzi
+  // przypadkowe wyczyszczenie byłoby dla niego stratą, nie udogodnieniem.
+  useEffect(() => {
+    ;(window as Window & { resetAnkiety?: () => void }).resetAnkiety = () => {
+      wyczyscStan()
+      setStan(pustyStan)
+      setPodpisOtwarty(false)
+      setKrok({ rodzaj: 'intro' })
+    }
+  }, [])
 
   const postep =
     krok.rodzaj === 'sekcja'
@@ -588,24 +593,13 @@ export default function SurveyFlow() {
                   />
                 </div>
 
-                {/* Pobranie własnych odpowiedzi — dopóki nie ma backendu,
-                    to jedyna droga, żeby wyjąć dane z urządzenia. */}
-                <button
-                  type="button"
-                  onClick={() => eksportujOdpowiedzi(stan)}
-                  className="min-h-[48px] rounded-md border border-[#3B3121]/20 bg-white font-display text-[12.5px] font-semibold uppercase tracking-[0.12em] text-[#6B5D42] transition-all hover:border-[#C9A14A] hover:text-[#9C7A2C] active:translate-y-px"
-                >
-                  Pobierz swoje odpowiedzi (Excel)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={odNowa}
-                  className="min-h-[44px] font-spacemono text-[11px] uppercase tracking-[0.2em] text-[#B0A283] underline-offset-4 transition-colors hover:text-[#9C8345] hover:underline"
-                >
-                  Wypełnij od nowa
-                </button>
               </div>
+
+              {/* Przegląd tego, co uczestnik wysłał. Zastąpił przyciski
+                  pobierania pliku i wypełniania od nowa — po zakończeniu
+                  ankiety człowiek chce zobaczyć swoje odpowiedzi, a nie
+                  zarządzać plikami. */}
+              <PodsumowanieOdpowiedzi odpowiedzi={stan.odpowiedzi} />
             </motion.section>
           )}
         </AnimatePresence>

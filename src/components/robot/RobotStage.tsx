@@ -97,10 +97,13 @@ export function RobotStage({ className }: { className?: string }) {
 
   /**
    * Podpowiedź przy głowie robota. Pojawia się, gdy scena jest już gotowa
-   * (nad szkieletem nie miałaby sensu) i znika przy pierwszym ruchu myszy albo
-   * dotknięciu — wtedy człowiek widzi reakcję robota na własne oczy i napis
-   * jest już zbędny. Gdyby nikt nic nie zrobił, chowa się sama po kilku
-   * sekundach, żeby nie wisiała nad ekranem przez cały czas.
+   * (nad szkieletem nie miałaby sensu) i znika w chwili, gdy człowiek dotknie
+   * ekranu albo ruszy myszą — czyli dokładnie wtedy, gdy widzi reakcję robota
+   * na własne oczy i napis staje się zbędny.
+   *
+   * Celowo nie chowa się sama po czasie: ktoś może najpierw przeczytać wstęp,
+   * a dopiero potem spojrzeć niżej. Znikanie po kilku sekundach sprawiłoby,
+   * że część osób nigdy by jej nie zobaczyła.
    *
    * Świadomie NIE uzależniam jej od tego, czy żyroskop zdążył się włączyć.
    * Wcześniejsza wersja tak robiła i na telefonie podpowiedź nie pokazywała
@@ -121,13 +124,17 @@ export function RobotStage({ className }: { className?: string }) {
       if (e.isTrusted) zamknij()
     }
 
+    // `touchstart` obok `pointerdown`, bo na części przeglądarek mobilnych
+    // dotknięcie płótna sceny 3D bywa przechwytywane i pointerdown nie dociera
+    // do okna. Dwa nasłuchy kosztują tyle co nic, a gwarantują, że podpowiedź
+    // zniknie po dotknięciu ekranu zawsze.
     window.addEventListener('pointerdown', odCzlowieka)
     window.addEventListener('pointermove', odCzlowieka)
-    const id = window.setTimeout(zamknij, 9000)
+    window.addEventListener('touchstart', odCzlowieka)
     return () => {
       window.removeEventListener('pointerdown', odCzlowieka)
       window.removeEventListener('pointermove', odCzlowieka)
-      window.clearTimeout(id)
+      window.removeEventListener('touchstart', odCzlowieka)
     }
   }, [lekkaWersja, scenaGotowa])
 

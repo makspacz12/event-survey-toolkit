@@ -1,0 +1,263 @@
+/**
+ * ODBIERANIE ODPOWIEDZI Z ANKIETY → ARKUSZ GOOGLE
+ * ================================================
+ * Ten skrypt mieszka WEWNĄTRZ arkusza Google (Rozszerzenia → Apps Script)
+ * i działa na koncie właściciela arkusza. Aplikacja nie ma żadnych haseł do
+ * Google: wysyła tylko dane pod adres wdrożenia, a Google autoryzuje zapis
+ * po swojej stronie.
+ *
+ * WDROŻENIE (raz, około 15 minut):
+ *  1. Otwórz arkusz na koncie Fundacji CTN.
+ *  2. Rozszerzenia → Apps Script. Skasuj to, co tam jest, i wklej ten plik.
+ *  3. Zmień TOKEN poniżej na własny losowy ciąg (im dłuższy, tym lepiej).
+ *  4. Wdróż → Nowe wdrożenie → typ: Aplikacja internetowa.
+ *       Wykonaj jako: Ja
+ *       Kto ma dostęp: Wszyscy
+ *  5. Google pokaże ostrzeżenie o niezweryfikowanej aplikacji:
+ *       Zaawansowane → Przejdź do (nazwa projektu). To normalne dla własnych skryptów.
+ *  6. Skopiuj adres wdrożenia (kończy się na /exec) i przekaż go osobie,
+ *     która podpina aplikację.
+ *
+ * AKTUALIZACJA SKRYPTU: po każdej zmianie kodu zrób Wdróż → Zarządzaj wdrożeniami
+ * → edytuj → Wersja: Nowa. Bez tego adres serwuje starą wersję.
+ */
+
+/**
+ * Hasło do endpointu. Musi być identyczne z VITE_ARKUSZ_TOKEN w aplikacji.
+ *
+ * UWAGA: ten plik leży w publicznym repozytorium, więc trzymamy tu wyłącznie
+ * wartość zastępczą. Prawdziwe hasło wpisuje się w edytorze Apps Script i tam
+ * zostaje — nigdy nie wraca do repozytorium.
+ */
+const TOKEN = 'WPISZ-WLASNE-HASLO'
+
+/**
+ * ID arkusza, do którego zapisujemy.
+ *
+ * ZOSTAW PUSTE, jeśli skrypt powstał z wnętrza arkusza
+ * (Rozszerzenia → Apps Script) — wtedy sam znajdzie swój arkusz.
+ *
+ * WYPEŁNIJ, jeśli skrypt to osobny projekt założony na script.google.com.
+ * ID znajdziesz w adresie arkusza, między „/d/” a „/edit”:
+ *
+ *   docs.google.com/spreadsheets/d/1AbC...XyZ/edit
+ *                                  └────┬────┘
+ *                                    to wklej
+ */
+const ID_ARKUSZA = 'WPISZ-ID-ARKUSZA'
+
+/** Nazwa zakładki z odpowiedziami. Zostanie utworzona, jeśli jej nie ma. */
+const ARKUSZ = 'Odpowiedzi'
+
+/** Kolumny stałe, zawsze na początku, w tej kolejności. */
+const KOLUMNY_STALE = [
+  'Data wysłania',
+  'Identyfikator sesji',
+  'Kto wypełnił',
+  'Wersja ankiety',
+]
+
+/**
+ * Punkt wejścia: aplikacja wysyła tu POST z JSON-em.
+ *
+ * Oczekiwany kształt danych:
+ * {
+ *   token: "...",
+ *   sesja: "uuid urządzenia",
+ *   kto: "Anna Kowalska" | "anonimowo",
+ *   wersja: "2026-08-13",
+ *   pulapka: "",                       // ukryte pole, boty je wypełniają
+ *   odpowiedzi: { "id-pytania": "wartość", ... },
+ *   etykiety:   { "id-pytania": "Treść pytania", ... }
+ * }
+ */
+function doPost(e) {
+  try {
+    // Uruchomienie z edytora przyciskiem „Uruchom” nie przekazuje żadnych
+    // danych, więc `e` jest puste. Bez tego komunikatu Google pokazuje tylko
+    // „Cannot read properties of undefined”, co niczego nie wyjaśnia.
+    if (!e || !e.postData) {
+      throw new Error(
+        'Funkcja doPost odbiera dane z aplikacji i nie można jej uruchomić ' +
+          'ręcznie. Aby sprawdzić zapis do arkusza, wybierz z listy funkcję ' +
+          '„testZapisu” i kliknij Uruchom.',
+      )
+    }
+
+    const dane = JSON.parse(e.postData.contents)
+
+    if (dane.token !== TOKEN) {
+      return odpowiedz({ ok: false, blad: 'zly-token' })
+    }
+
+    // Pole pułapka: niewidoczne dla człowieka, automaty wypełniają wszystko.
+    if (dane.pulapka) {
+      // Udajemy sukces, żeby bot nie próbował dalej.
+      return odpowiedz({ ok: true })
+    }
+
+    // Blokada: zapisy ustawiają się w kolejce, więc dwie osoby wysyłające
+    // w tej samej chwili nie trafią do tego samego wiersza.
+    const lock = LockService.getScriptLock()
+    lock.waitLock(30000)
+    try {
+      zapisz(dane)
+    } finally {
+      lock.releaseLock()
+    }
+
+    return odpowiedz({ ok: true })
+  } catch (err) {
+    // Log widoczny w Apps Script → Wykonania. Ułatwia diagnozę bez zgadywania.
+    console.error('Błąd zapisu: ' + err)
+    return odpowiedz({ ok: false, blad: String(err) })
+  }
+}
+
+/** Zapis pojedynczej ankiety jako jeden wiersz. */
+function zapisz(dane) {
+  const arkusz = pobierzArkusz()
+  const naglowki = pobierzNaglowki(arkusz)
+
+  // Nowe pytania (np. dodane w trakcie zbierania) dostają kolumnę na końcu.
+  // Starsze wiersze mają w niej pusto i to jest zgodne z prawdą: tamte osoby
+  // po prostu nie zobaczyły tego pytania.
+  const brakujace = Object.keys(dane.odpowiedzi || {}).filter(
+    (id) => naglowki.indexOf(id) === -1,
+  )
+  if (brakujace.length > 0) {
+    dodajKolumny(arkusz, naglowki, brakujace, dane.etykiety || {})
+  }
+
+  const aktualne = pobierzNaglowki(arkusz)
+  const wiersz = aktualne.map((id) => {
+    if (id === 'Data wysłania')
+      return Utilities.formatDate(new Date(), 'Europe/Warsaw', 'yyyy-MM-dd HH:mm:ss')
+    if (id === 'Identyfikator sesji') return dane.sesja || ''
+    if (id === 'Kto wypełnił') return dane.kto || 'anonimowo'
+    if (id === 'Wersja ankiety') return dane.wersja || ''
+    const w = (dane.odpowiedzi || {})[id]
+    return w === undefined || w === null ? '' : String(w)
+  })
+
+  arkusz.appendRow(wiersz)
+  oznaczPoprzednie(arkusz, dane.sesja)
+}
+
+/**
+ * Zwraca zakładkę z odpowiedziami. TWORZY JĄ, jeśli nie istnieje, razem z
+ * wierszem nagłówków. Dzięki temu wdrożenie działa nawet na pustym, świeżo
+ * założonym arkuszu i nikt nie musi niczego przygotowywać ręcznie.
+ */
+function pobierzArkusz() {
+  const plik = pobierzPlik()
+  let arkusz = plik.getSheetByName(ARKUSZ)
+
+  if (!arkusz) {
+    arkusz = plik.insertSheet(ARKUSZ)
+  }
+
+  if (arkusz.getLastRow() === 0) {
+    // Wiersz 1: identyfikatory (techniczne, ukrywany).
+    arkusz.appendRow(KOLUMNY_STALE)
+    // Wiersz 2: czytelne nagłówki dla człowieka.
+    arkusz.appendRow(KOLUMNY_STALE)
+    arkusz.getRange(1, 1, 1, KOLUMNY_STALE.length).setFontColor('#999999')
+    arkusz.getRange(2, 1, 1, KOLUMNY_STALE.length).setFontWeight('bold')
+    arkusz.setFrozenRows(2)
+    arkusz.hideRows(1)
+  }
+
+  return arkusz
+}
+
+/**
+ * Znajduje plik arkusza. Obsługuje oba sposoby założenia skryptu:
+ * przypięty do arkusza oraz samodzielny projekt z wpisanym ID_ARKUSZA.
+ */
+function pobierzPlik() {
+  if (ID_ARKUSZA) {
+    return SpreadsheetApp.openById(ID_ARKUSZA)
+  }
+  const aktywny = SpreadsheetApp.getActiveSpreadsheet()
+  if (!aktywny) {
+    throw new Error(
+      'Ten skrypt nie jest przypięty do żadnego arkusza. ' +
+        'Wpisz identyfikator arkusza w stałej ID_ARKUSZA na górze pliku ' +
+        '(znajdziesz go w adresie arkusza, między /d/ a /edit).',
+    )
+  }
+  return aktywny
+}
+
+/** Wiersz 1 to identyfikatory pytań i po nich układamy dane. */
+function pobierzNaglowki(arkusz) {
+  const szerokosc = Math.max(arkusz.getLastColumn(), KOLUMNY_STALE.length)
+  return arkusz
+    .getRange(1, 1, 1, szerokosc)
+    .getValues()[0]
+    .map((v) => String(v))
+}
+
+/** Dokłada kolumny dla pytań, których arkusz jeszcze nie zna. */
+function dodajKolumny(arkusz, naglowki, noweId, etykiety) {
+  const start = naglowki.length + 1
+  noweId.forEach((id, i) => {
+    const kol = start + i
+    arkusz.getRange(1, kol).setValue(id).setFontColor('#999999')
+    arkusz
+      .getRange(2, kol)
+      .setValue(etykiety[id] || id)
+      .setFontWeight('bold')
+  })
+}
+
+/**
+ * Gdy ktoś wypełnia drugi raz, poprzedni wiersz z tej samej sesji dostaje
+ * dopisek w kolumnie „Kto wypełnił”. Nic nie kasujemy: widać, że osoba
+ * zmieniła zdanie, a najnowsza odpowiedź jest zawsze najniżej.
+ */
+function oznaczPoprzednie(arkusz, sesja) {
+  if (!sesja) return
+  const kolSesja = 2 // druga kolumna wg KOLUMNY_STALE
+  const kolKto = 3
+  const ostatni = arkusz.getLastRow()
+  if (ostatni < 4) return
+
+  const sesje = arkusz.getRange(3, kolSesja, ostatni - 2, 1).getValues()
+  for (let i = 0; i < sesje.length - 1; i++) {
+    if (String(sesje[i][0]) === String(sesja)) {
+      const komorka = arkusz.getRange(3 + i, kolKto)
+      const obecne = String(komorka.getValue())
+      if (obecne.indexOf('[nieaktualne]') === -1) {
+        komorka.setValue('[nieaktualne] ' + obecne)
+      }
+    }
+  }
+}
+
+/** Odpowiedź w JSON. */
+function odpowiedz(obiekt) {
+  return ContentService.createTextOutput(JSON.stringify(obiekt)).setMimeType(
+    ContentService.MimeType.JSON,
+  )
+}
+
+/**
+ * TEST BEZ APLIKACJI. Uruchom tę funkcję z edytora (przycisk „Uruchom”),
+ * żeby sprawdzić, czy arkusz i zakładka powstają poprawnie. Dopisze jeden
+ * przykładowy wiersz, który potem możesz skasować ręcznie.
+ */
+function testZapisu() {
+  zapisz({
+    sesja: 'test-' + new Date().getTime(),
+    kto: 'TEST (do skasowania)',
+    wersja: 'test',
+    odpowiedzi: { 'nps': 9, 'obecnosc-dni': 'Piątek; Sobota' },
+    etykiety: {
+      'nps': 'Na ile prawdopodobne, że polecisz Masterclass znajomemu?',
+      'obecnosc-dni': 'W których dniach uczestniczyłeś(-aś)?',
+    },
+  })
+  console.log('Zapisano wiersz testowy. Sprawdź zakładkę „' + ARKUSZ + '”.')
+}

@@ -1,0 +1,22 @@
+# zależności i wyniki budowania
+node_modules/
+dist/
+
+# konfiguracja z hasłami — NIGDY do repozytorium
+.env.local
+.env*.local
+*.local
+
+# zrzuty ekranu i artefakty testów
+.playwright-mcp/
+*.png
+!public/**/*.png
+
+# pliki robocze Excela (generowane komendami npm)
+ankieta.xlsx
+ankieta.xlsx.bak
+src/data/ankieta.json.bak
+
+# systemowe
+.DS_Store
+Thumbs.db

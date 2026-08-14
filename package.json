@@ -1,0 +1,38 @@
+{
+  "name": "ankieta-masterclass-ctn",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "pytania:do-excela": "node scripts/json-do-excel.mjs",
+    "pytania:z-excela": "node scripts/excel-do-json.mjs",
+    "przyklad-arkusza": "node scripts/przyklad-arkusza.mjs",
+    "test-polaczenia": "node scripts/test-polaczenia.mjs",
+    "test-skryptu": "node scripts/test-skryptu.mjs",
+    "test-scenariuszy": "node scripts/test-scenariuszy.mjs"
+  },
+  "dependencies": {
+    "@splinetool/react-spline": "^2.2.6",
+    "@splinetool/runtime": "^1.9.28",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.3.19",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.4.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.40",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5"
+  }
+}

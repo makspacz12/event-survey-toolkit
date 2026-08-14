@@ -46,6 +46,38 @@ Prawdziwych sekretów w tej aplikacji nie ma i nie powinno być.
    i zobacz, czy na ekranie końcowym pojawia się „Wysłano do organizatora”,
    a w arkuszu nowy wiersz. Wiersz testowy potem skasuj.
 
+## Trzy pułapki Vercela
+
+Wszystkie trzy potrafią sprawić, że aplikacja „nie działa”, mimo że wdrożenie
+ma status *Ready*.
+
+### 1. Ochrona wdrożeń (Deployment Protection)
+
+Domyślnie Vercel może wymagać zalogowania do konta Vercel, żeby otworzyć
+stronę. Uczestnik zobaczy wtedy ekran **„Login – Vercel”** zamiast ankiety.
+
+*Settings → Deployment Protection → Vercel Authentication → **Disabled** → Save.*
+
+Publiczna ankieta z kodu QR musi być dostępna bez logowania.
+
+### 2. Zmienne wymagają ponownego zbudowania
+
+Vite wczytuje `VITE_*` w trakcie budowania. Zapisanie zmiennej w panelu nic nie
+zmienia w już zbudowanej aplikacji — Vercel sam o tym przypomina komunikatem
+*„A new deployment is needed for changes to take effect”*.
+
+*Deployments → ostatnie → menu … → **Redeploy***
+(albo dowolny nowy commit w gałęzi `main`).
+
+### 3. Nieistniejąca domena psuje pozostałe adresy
+
+Domenę można dodać w panelu, zanim się ją kupi. Jeśli taka domena stanie się
+główną (*primary*), Vercel zacznie przekierowywać na nią pozostałe adresy —
+i wszystkie zaczną zwracać **404**, choć aplikacja działa poprawnie.
+
+Zasada: w *Settings → Domains* trzymamy wyłącznie adresy, które faktycznie
+istnieją, a jako główny ustawiamy ten, który na pewno odpowiada.
+
 ## Własna domena
 
 Rekomendacja: subdomena domeny wydarzenia, na przykład

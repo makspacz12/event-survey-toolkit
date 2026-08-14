@@ -67,6 +67,24 @@ function idSesji(): string {
   }
 }
 
+/**
+ * Zapomina dotychczasowy identyfikator, więc następne wypełnienie na tym
+ * urządzeniu liczy się jako osobna odpowiedź.
+ *
+ * Wywołujemy to po potwierdzonej wysyłce, razem z czyszczeniem odpowiedzi.
+ * Jest to KONIECZNE, a nie kosmetyczne: gdyby identyfikator został, a ankietę
+ * wypełniłby potem ktoś inny (jeden telefon podawany dalej), skrypt uznałby
+ * jego odpowiedzi za poprawkę poprzednich i oznaczyłby wiersz pierwszej osoby
+ * jako nieaktualny.
+ */
+export function zapomnijSesje() {
+  try {
+    localStorage.removeItem(KLUCZ_SESJI)
+  } catch {
+    /* brak dostępu do pamięci — trudno, następna wysyłka i tak zadziała */
+  }
+}
+
 /** Zamienia wartość na tekst czytelny w arkuszu. */
 function czytelna(w: unknown): string {
   if (w == null || w === '') return ''

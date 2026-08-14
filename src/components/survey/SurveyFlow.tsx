@@ -18,6 +18,7 @@ import {
   oproznijKolejke,
   wyslijOdpowiedzi,
   wysylkaSkonfigurowana,
+  zapomnijSesje,
   type StatusWysylki,
 } from '@/lib/wyslij'
 import { cn } from '@/lib/utils'
@@ -156,13 +157,25 @@ export default function SurveyFlow() {
   const stanRef = useRef(stan)
   stanRef.current = stan
 
+  /**
+   * Po potwierdzonej wysyłce kasujemy odpowiedzi z pamięci telefonu i od tej
+   * chwili nie wolno ich tam wpisać z powrotem. Bez tej blokady zapis przy
+   * opuszczaniu strony natychmiast odtworzyłby skasowane dane — sprawdzone,
+   * dokładnie tak się dzieje.
+   */
+  const zapisZablokowany = useRef(false)
+
   useEffect(() => {
+    if (zapisZablokowany.current) return
     const id = window.setTimeout(() => zapiszStan(stan), 400)
     return () => window.clearTimeout(id)
   }, [stan])
 
   useEffect(() => {
-    const zapiszTeraz = () => zapiszStan(stanRef.current)
+    const zapiszTeraz = () => {
+      if (zapisZablokowany.current) return
+      zapiszStan(stanRef.current)
+    }
     // `pagehide` łapie też zamknięcie karty na iOS, gdzie `beforeunload`
     // bywa pomijany.
     window.addEventListener('pagehide', zapiszTeraz)
@@ -387,6 +400,38 @@ export default function SurveyFlow() {
     const ok = await wyslijOdpowiedzi(stanDoWyslania)
     setStatus(ok ? 'wyslano' : 'blad')
   }
+
+  /**
+   * SPRZĄTANIE PAMIĘCI PO POTWIERDZONEJ WYSYŁCE
+   * ============================================
+   * Gdy odpowiedzi są już bezpiecznie w arkuszu, nie ma powodu, żeby dalej
+   * leżały w telefonie. Po wyczyszczeniu następne otwarcie strony zaczyna
+   * ankietę od początku, zamiast pokazywać ekran z podziękowaniem.
+   *
+   * TRZY WARUNKI, KTÓRE MUSZĄ BYĆ SPEŁNIONE NARAZ — każdy z nich chroni przed
+   * skasowaniem czegoś, czego organizator nigdy by nie zobaczył:
+   *
+   *  1. `status === 'wyslano'` — serwer POTWIERDZIŁ zapis. Nie wystarczy, że
+   *     wysyłka poszła; czekamy na odpowiedź „ok”. Przy błędzie odpowiedzi
+   *     zostają w telefonie i są ponawiane.
+   *  2. kolejka jest pusta — gdyby czekała w niej starsza, nieudana wysyłka,
+   *     wyczyszczenie zabrałoby jej ostatnią szansę.
+   *  3. wysyłka jest w ogóle skonfigurowana — bez podłączonego arkusza
+   *     odpowiedzi istnieją WYŁĄCZNIE w telefonie i kasowanie ich byłoby
+   *     zwykłą utratą danych.
+   *
+   * Czyścimy tylko pamięć trwałą. Stan w pamięci aplikacji zostaje nietknięty,
+   * więc podsumowanie na ekranie końcowym dalej się wyświetla.
+   */
+  useEffect(() => {
+    if (krok.rodzaj !== 'koniec') return
+    if (!wysylkaSkonfigurowana || status !== 'wyslano') return
+    if (ileWKolejce() > 0) return
+
+    zapisZablokowany.current = true
+    wyczyscStan()
+    zapomnijSesje()
+  }, [krok.rodzaj, status])
 
   /**
    * Przycisk „Wstecz" ZDEJMUJE wpis z historii, zamiast dokładać nowy.

@@ -65,6 +65,8 @@ export function RobotStage({ className }: { className?: string }) {
   const [scenaGotowa, setScenaGotowa] = useState(false)
   /** Minął czas, po którym uznajemy, że scena już nie dojdzie. */
   const [scenaNieDoszla, setScenaNieDoszla] = useState(false)
+  /** Czy pokazać podpowiedź „Dotknij mnie" przy głowie robota. */
+  const [pokazPodpowiedz, setPokazPodpowiedz] = useState(false)
 
   // Decyzję podejmujemy po zamontowaniu, żeby nie rozjechał się pierwszy render.
   useEffect(() => {
@@ -92,6 +94,44 @@ export function RobotStage({ className }: { className?: string }) {
     window.addEventListener('pointerdown', onFirstTouch, { once: true })
     return () => window.removeEventListener('pointerdown', onFirstTouch)
   }, [isTouch, state, enableGyro, lekkaWersja])
+
+  /**
+   * Podpowiedź przy głowie robota. Pojawia się, gdy scena jest już gotowa
+   * (nad szkieletem nie miałaby sensu) i znika przy pierwszym ruchu myszy albo
+   * dotknięciu — wtedy człowiek widzi reakcję robota na własne oczy i napis
+   * jest już zbędny. Gdyby nikt nic nie zrobił, chowa się sama po kilku
+   * sekundach, żeby nie wisiała nad ekranem przez cały czas.
+   *
+   * Świadomie NIE uzależniam jej od tego, czy żyroskop zdążył się włączyć.
+   * Wcześniejsza wersja tak robiła i na telefonie podpowiedź nie pokazywała
+   * się wcale — czyli dokładnie tam, gdzie jest najbardziej potrzebna.
+   */
+  useEffect(() => {
+    if (lekkaWersja || !scenaGotowa) return
+    setPokazPodpowiedz(true)
+
+    const zamknij = () => setPokazPodpowiedz(false)
+
+    // UWAGA, PUŁAPKA: obsługa żyroskopu SYNTETYZUJE zdarzenia `pointermove`
+    // na płótnie sceny — właśnie dzięki temu robot śledzi przechył telefonu.
+    // Lecą one nieprzerwanie, kilkadziesiąt na sekundę, i bez tego warunku
+    // gasiły podpowiedź w tej samej chwili, w której się pojawiła. Zdarzenia
+    // od człowieka mają `isTrusted === true`, sztuczne — `false`.
+    const odCzlowieka = (e: Event) => {
+      if (e.isTrusted) zamknij()
+    }
+
+    window.addEventListener('pointerdown', odCzlowieka)
+    window.addEventListener('pointermove', odCzlowieka)
+    const id = window.setTimeout(zamknij, 9000)
+    return () => {
+      window.removeEventListener('pointerdown', odCzlowieka)
+      window.removeEventListener('pointermove', odCzlowieka)
+      window.clearTimeout(id)
+    }
+  }, [lekkaWersja, scenaGotowa])
+
+  const trescPodpowiedzi = isTouch ? 'Dotknij mnie' : 'Poruszaj myszką'
 
   if (lekkaWersja) {
     return (
@@ -140,6 +180,27 @@ export function RobotStage({ className }: { className?: string }) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom"
         />
+      )}
+
+      {/*
+        Podpowiedź przy głowie robota. Bez niej większość osób nie zauważa, że
+        robot w ogóle na nie reaguje — patrzą na statyczny obrazek i klikają
+        Start. Znika przy pierwszym ruchu, więc nikomu nie wisi nad ekranem.
+
+        `pointer-events-none` jest tu KRYTYCZNE: kursor musi przechodzić przez
+        podpowiedź do płótna sceny, inaczej robot przestałby śledzić mysz
+        dokładnie w tym miejscu, w którym zachęcamy do ruchu.
+      */}
+      {pokazPodpowiedz && (
+        <div
+          aria-hidden="true"
+          className="podpowiedz-robota pointer-events-none absolute right-[7%] top-[12%] z-20 flex items-center gap-2"
+        >
+          <span className="h-px w-7 bg-gradient-to-l from-[#C9A14A]/75 to-transparent" />
+          <span className="whitespace-nowrap rounded-full border border-[#C9A14A]/45 bg-[#070A12]/75 px-3 py-1.5 font-spacemono text-[10px] uppercase tracking-[0.18em] text-[#E2D2A6] backdrop-blur-sm">
+            {trescPodpowiedzi}
+          </span>
+        </div>
       )}
     </div>
   )

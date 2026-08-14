@@ -197,6 +197,10 @@ export default function SurveyFlow() {
   const sekcjeRef = useRef(sekcje)
   sekcjeRef.current = sekcje
 
+  // Z tego samego powodu nasłuch historii potrzebuje bieżącego kroku.
+  const krokRef = useRef(krok)
+  krokRef.current = krok
+
   // Gdy zmiana odpowiedzi filtrujących SKRÓCI listę sekcji, a byliśmy na
   // sekcji spoza nowego zakresu — cofnij na ostatnią.
   useEffect(() => {
@@ -247,6 +251,9 @@ export default function SurveyFlow() {
    */
   const zHistorii = useRef(false)
 
+  /** Trwa wychodzenie z ankiety na ekran startowy (patrz nasłuch niżej). */
+  const wychodzimy = useRef(false)
+
   const idzDo = (index: number) => {
     setKrok({ rodzaj: 'sekcja', index })
     setStan((s) => ({ ...s, biezacaSekcja: index }))
@@ -259,31 +266,69 @@ export default function SurveyFlow() {
     }
   }
 
+  /**
+   * COFNIĘCIE IDZIE O JEDNĄ ZAKŁADKĘ WSTECZ, NIE DO POPRZEDNIO ODWIEDZONEJ
+   * =====================================================================
+   * Przeglądarka domyślnie wraca tam, gdzie uczestnik BYŁ. Gdyby więc skoczył
+   * paskiem u góry z „Obecności” prosto na „Podsumowanie”, cofnięcie
+   * wyrzuciłoby go z powrotem na „Obecność” — przeskakując pięć zakładek.
+   * Człowiek spodziewa się czegoś innego: że wróci do zakładki LEŻĄCEJ OBOK,
+   * czyli o jedną w kolejności ankiety.
+   *
+   * Dlatego przejmujemy cofnięcie i sami decydujemy, dokąd prowadzi. Po
+   * przejęciu dokładamy wpis z powrotem, żeby kolejne cofnięcie też do nas
+   * trafiło, a nie wyrzuciło ze strony. Głębokość historii się nie zmienia:
+   * cofnięcie zdejmuje jeden wpis, my dokładamy jeden.
+   *
+   * Wyjątkiem jest ekran przedstawienia się — z niego cofnięcie wyprowadza na
+   * ekran startowy, bo tam faktycznie kończy się ankieta.
+   */
   useEffect(() => {
-    const onPop = (e: PopStateEvent) => {
-      const stanHistorii = e.state as {
-        ankieta?: number
-        koniec?: boolean
-      } | null
-      zHistorii.current = true
-      if (stanHistorii?.koniec) {
-        // Powrót „do przodu” na ekran z podziękowaniem.
-        setKrok({ rodzaj: 'koniec' })
-      } else if (stanHistorii && typeof stanHistorii.ankieta === 'number') {
-        // Indeks z historii może wskazywać sekcję, której już nie ma: ktoś
-        // wszedł głęboko, wrócił do „Obecności", odznaczył dzień i lista się
-        // skurczyła. Bez przycięcia render trafiałby w `undefined` i pokazał
-        // pusty ekran w środku ankiety.
-        const bezpieczny = Math.min(
-          stanHistorii.ankieta,
-          Math.max(sekcjeRef.current.length - 1, 0),
-        )
-        setKrok({ rodzaj: 'sekcja', index: bezpieczny })
-        setStan((s) => ({ ...s, biezacaSekcja: bezpieczny }))
-      } else {
-        // Wpis bez naszego stanu = wejście na ankietę, czyli ekran startowy.
-        setKrok({ rodzaj: 'intro' })
+    const onPop = () => {
+      const biezacy = krokRef.current
+      const ostatniaSekcja = Math.max(sekcjeRef.current.length - 1, 0)
+
+      let cel: Krok | null = null
+      if (biezacy.rodzaj === 'koniec') {
+        cel = { rodzaj: 'sekcja', index: ostatniaSekcja }
+      } else if (biezacy.rodzaj === 'sekcja') {
+        // Przycięcie do zakresu: lista sekcji mogła się skurczyć, gdy ktoś
+        // wrócił do „Obecności” i odznaczył dzień. Bez tego render trafiałby
+        // w `undefined` i pokazał pusty ekran w środku ankiety.
+        const poprzednia = Math.min(biezacy.index, ostatniaSekcja) - 1
+        cel = poprzednia >= 0 ? { rodzaj: 'sekcja', index: poprzednia } : { rodzaj: 'intro' }
       }
+
+      // Z ekranu przedstawienia się cofnięcie wyprowadza na ekran startowy —
+      // tam ankieta faktycznie się zaczyna. `replace` zamiast zwykłego wyjścia,
+      // bo pod spodem leżą stare wpisy sekcji i uczestnik wylądowałby w środku
+      // ankiety z adresem niepasującym do tego, co widzi.
+      //
+      // Zabezpieczenie `wychodzimy` jest konieczne: zmiana adresu w obrębie tej
+      // samej strony potrafi NATYCHMIAST wywołać ten sam nasłuch jeszcze raz.
+      // Bez niego powstawała nieskończona pętla i przeglądarka zgłaszała
+      // przepełnienie stosu.
+      if (!cel) {
+        if (!wychodzimy.current) {
+          wychodzimy.current = true
+          window.location.replace('#/')
+        }
+        return
+      }
+
+      zHistorii.current = true
+      if (cel.rodzaj === 'sekcja') {
+        window.history.pushState(
+          { ankieta: cel.index },
+          '',
+          `#/ankieta/${cel.index + 1}`,
+        )
+        setStan((s) => ({ ...s, biezacaSekcja: cel.index }))
+      } else {
+        window.history.pushState({ intro: true }, '', '#/ankieta')
+      }
+      setKrok(cel)
+
       // Odblokowujemy dopiero po zastosowaniu zmiany.
       window.setTimeout(() => {
         zHistorii.current = false

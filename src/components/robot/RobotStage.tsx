@@ -61,11 +61,24 @@ export function RobotStage({ className }: { className?: string }) {
   const stageRef = useRef<HTMLDivElement>(null)
   const { isTouch, state, enableGyro } = useTiltControl(stageRef)
   const [lekkaWersja, setLekkaWersja] = useState(false)
+  /** Scena 3D zgłosiła, że jest gotowa. */
+  const [scenaGotowa, setScenaGotowa] = useState(false)
+  /** Minął czas, po którym uznajemy, że scena już nie dojdzie. */
+  const [scenaNieDoszla, setScenaNieDoszla] = useState(false)
 
   // Decyzję podejmujemy po zamontowaniu, żeby nie rozjechał się pierwszy render.
   useEffect(() => {
     setLekkaWersja(oszczedzajTransfer())
   }, [])
+
+  // Ile czekamy, zanim pokażemy plakat zamiast sceny. Na wolnym łączu scena
+  // potrafi schodzić kilka sekund i to normalne — dlatego próg jest wysoki.
+  // Chodzi o odróżnienie „wolno” od „w ogóle nie przyjdzie”.
+  useEffect(() => {
+    if (lekkaWersja || scenaGotowa) return
+    const id = window.setTimeout(() => setScenaNieDoszla(true), 12000)
+    return () => window.clearTimeout(id)
+  }, [lekkaWersja, scenaGotowa])
 
   // Pierwszy dotyk gdziekolwiek na stronie aktywuje żyroskop (iOS wymaga, by
   // prośba o zgodę wyszła z gestu użytkownika). Działa cicho: jeśli się nie
@@ -94,19 +107,6 @@ export function RobotStage({ className }: { className?: string }) {
 
   return (
     <div ref={stageRef} className={cn('relative', className)}>
-      {/*
-        Plakat leży POD sceną 3D. Gdy scena się wczyta, jej płótno zasłania go
-        w całości i nikt go nie zobaczy. Gdy jednak nie dojdzie — bo serwery
-        Spline albo unpkg są nieosiągalne z sieci w opactwie — zamiast pustego
-        prostokąta zostaje zdjęcie robota. Kosztuje 16 kB i nie wymaga
-        żadnej logiki, która mogłaby się sama zepsuć.
-      */}
-      <img
-        src={PLAKAT}
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom"
-      />
       <Suspense
         fallback={
           // Szkielet w kształcie sylwetki robota, nie spinner (DESIGN.md §4).
@@ -120,9 +120,27 @@ export function RobotStage({ className }: { className?: string }) {
       >
         <Spline
           scene={ROBOT_SCENE}
+          onLoad={() => setScenaGotowa(true)}
           className="relative h-full w-full [&>canvas]:!h-full [&>canvas]:!w-full"
         />
       </Suspense>
+
+      {/*
+        Plakat WYŁĄCZNIE jako ratunek, nigdy w czasie ładowania.
+        Wcześniej leżał pod sceną przez cały czas i przez kilka sekund widać
+        było zdjęcie robota w innej pozie, a potem podmieniał się na model 3D.
+        Wyglądało to jak dwa różne roboty. Teraz pokazuje się dopiero wtedy,
+        gdy scena nie dojdzie w rozsądnym czasie — czyli gdy serwery Spline
+        albo unpkg są nieosiągalne z sieci w opactwie.
+      */}
+      {scenaNieDoszla && !scenaGotowa && (
+        <img
+          src={PLAKAT}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom"
+        />
+      )}
     </div>
   )
 }

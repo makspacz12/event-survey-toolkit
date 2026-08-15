@@ -26,3 +26,6 @@ _smieci/
 
 # Skrypt z prawdziwym hasłem i identyfikatorem arkusza — nie trafia do repozytorium
 apps-script/Kod-DO-WKLEJENIA.gs
+
+# Edytor pytan — osobne narzedzie lokalne, nie czesc aplikacji
+edytor/

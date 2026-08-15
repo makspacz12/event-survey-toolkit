@@ -752,11 +752,12 @@ export default function SurveyFlow() {
                 >
                   <IkonaCheck className="h-7 w-7" />
                 </motion.span>
+                {/* Bez imienia, nawet gdy ktoś się przedstawił na początku.
+                    Imię trafia do arkusza i to wystarcza — na ekranie jest
+                    zbędne, a przy wypełnianiu na cudzym telefonie pokazywałoby
+                    je osobie postronnej. */}
                 <h2 className="mt-6 font-dmserif text-[32px] leading-[1.1] text-[#3B3121]">
                   Dziękujemy
-                  {stan.intro.imieNazwisko
-                    ? `, ${stan.intro.imieNazwisko.trim().split(' ')[0]}`
-                    : ''}
                 </h2>
                 {/* Bez skonfigurowanej wysyłki odpowiedzi zostają wyłącznie na
                     telefonie uczestnika. Nie wolno wtedy twierdzić, że zostały

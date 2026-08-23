@@ -26,11 +26,11 @@ function SideOrnament({ side }: { side: 'left' | 'right' }) {
         )}
       >
         <span className="h-full w-px bg-gradient-to-b from-transparent via-[#C9A14A]/30 to-transparent" />
-        <span className="h-full w-px bg-gradient-to-b from-transparent via-[#9FB8C8]/20 to-transparent" />
+        <span className="h-full w-px bg-gradient-to-b from-transparent via-[#8A7A55]/20 to-transparent" />
       </div>
       {/* pionowy napis */}
       <span
-        className="animate-pulse-glow select-none font-spacemono text-[11px] uppercase tracking-[0.6em] text-[#C9A14A]/35"
+        className="animate-pulse-glow select-none font-spacemono text-[11px] uppercase tracking-[0.6em] text-[#9C7A2C]/40"
         style={{ writingMode: 'vertical-rl' }}
       >
         Masterclass Leadership · Tyniec 2026
@@ -47,13 +47,13 @@ export function PhoneFrame({
   className?: string
 }) {
   return (
-    <div className="relative flex min-h-[100dvh] w-full justify-center bg-[#070A12]">
+    <div className="relative flex min-h-[100dvh] w-full justify-center bg-parchment">
       <SideOrnament side="left" />
       <SideOrnament side="right" />
       {/* właściwa „szyba telefonu" */}
       <div
         className={cn(
-          'relative z-10 min-h-[100dvh] w-full max-w-[440px] border-x border-white/[0.06] shadow-[0_0_80px_-20px_rgba(201,161,74,0.15)]',
+          'relative z-10 min-h-[100dvh] w-full max-w-[440px] border-x border-[#3B3121]/10 shadow-[0_0_80px_-20px_rgba(201,161,74,0.35)]',
           className,
         )}
       >

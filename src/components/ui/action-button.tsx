@@ -21,10 +21,12 @@ const variants: Record<
     line: string
   }
 > = {
+  // Wariant złoty stoi teraz na JASNYM tle: jasny napis i ledwie widoczne
+  // obramowanie znikały na papierze. Pełne wypełnienie, biały napis.
   gold: {
-    border: 'border-[#C9A14A]/35',
-    text: 'text-[#EBD9A8]',
-    hoverText: 'group-hover:text-[#17110A]',
+    border: 'border-[#C9A14A]',
+    text: 'text-white',
+    hoverText: 'group-hover:text-white',
     fill: 'from-[#E6C77E] via-[#D4AD5C] to-[#C9A14A]',
     glow: 'group-hover:shadow-[0_14px_44px_-12px_rgba(201,161,74,0.6)]',
     line: 'bg-[#E6C77E]',
@@ -59,7 +61,7 @@ export const ActionButton = React.forwardRef<
         'transition-[transform,box-shadow,border-color] duration-300 ease-out will-change-transform',
         'hover:-translate-y-[3px] active:translate-y-0 active:scale-[0.975] active:duration-100',
         'active:shadow-[inset_0_2px_14px_rgba(0,0,0,0.5)]',
-        'focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-[#9C7A2C] focus-visible:ring-offset-2',
         v.border,
         v.glow,
         className,
@@ -69,7 +71,7 @@ export const ActionButton = React.forwardRef<
       <span
         aria-hidden
         className={cn(
-          'absolute inset-0 origin-bottom scale-y-0 bg-gradient-to-t transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-y-100',
+          'absolute inset-0 origin-bottom bg-gradient-to-t transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
           v.fill,
         )}
       />

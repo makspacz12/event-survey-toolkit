@@ -29,3 +29,16 @@ apps-script/Kod-DO-WKLEJENIA.gs
 
 # Edytor pytan — osobne narzedzie lokalne, nie czesc aplikacji
 edytor/
+
+# Transkrypcja nagran — osobne narzedzie lokalne
+transkrypcja/
+
+# Kopie zapasowe przed wprowadzaniem uwag
+_kopia-*/
+
+# Nagrania z omowieniem aplikacji — ciezkie, nie naleza do repozytorium
+*.mp4
+*.mov
+
+# Notatki wewnetrzne z omowienia aplikacji — nie do publicznego repozytorium
+UWAGI-MATEUSZA.md

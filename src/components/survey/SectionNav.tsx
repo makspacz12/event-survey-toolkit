@@ -37,8 +37,8 @@ export function SectionNav({
     {
       klucz: '__intro',
       indeks: INTRO,
-      nazwa: 'Przedstawienie',
-      pelna: 'Przedstawienie się',
+      nazwa: 'Start',
+      pelna: 'Zanim zaczniemy',
       wypelniony: introWypelnione,
       // Dopóki nie wiadomo, czy ktoś wypełnia anonimowo, nie puszczamy go
       // dalej — inaczej przeskoczyłby wybór, którego wymaga ankieta.

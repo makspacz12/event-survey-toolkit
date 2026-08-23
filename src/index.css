@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -18,8 +18,8 @@ body,
 }
 
 body {
-  background-color: #070a12;
-  color: #f8fafc;
+  background-color: #f1e9db;
+  color: #3b3121;
   /* Krój z tailwind.config.js. Wcześniej był tu Inter — kroju, którego
      projekt w ogóle nie ładuje — więc treść pytań renderowała się fontem
      systemowym zamiast Outfit. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import ankietaJson from '@/data/ankieta.json'
 import type { Ankieta, Sekcja, Warunek, Wartosc } from '@/data/typy'
@@ -198,8 +198,21 @@ export default function SurveyFlow() {
     }
   }, [krok])
 
+  /**
+   * SEKCJA STARTOWA JEST CZĘŚCIĄ EKRANU POWITALNEGO
+   * ================================================
+   * Uwaga z nagrania: „te dwie pierwsze strony, przedstawienie i obecność,
+   * scaliłbym — nie potrzebuje być to takie wielkie”. Pierwsza sekcja z pliku
+   * z pytaniami wyświetla się więc RAZEM z wyborem „przedstawię się /
+   * anonimowo”, na jednym ekranie „Zanim zaczniemy”.
+   *
+   * Dlatego wypada z listy sekcji do przeklikiwania — inaczej te same pytania
+   * pokazałyby się drugi raz jako osobna zakładka.
+   */
+  const sekcjaStartowa = ANKIETA.sekcje[0]
+
   const sekcje = useMemo(
-    () => ANKIETA.sekcje.filter((s) => widoczna(s, stan.odpowiedzi)),
+    () => ANKIETA.sekcje.slice(1).filter((s) => widoczna(s, stan.odpowiedzi)),
     [stan.odpowiedzi],
   )
 
@@ -390,6 +403,17 @@ export default function SurveyFlow() {
    * kartę.
    */
   const zakoncz = () => {
+    // Sekcja startowa mieszka na ekranie powitalnym i nie ma jej w `sekcje`,
+    // więc bez tego jej pytań obowiązkowych nikt by nie sprawdził.
+    const brakNaStarcie = brakujace(sekcjaStartowa)
+    if (brakNaStarcie.length > 0) {
+      setBrakujacePytanie(brakNaStarcie[0].id)
+      pendingBladRef.current = `Uzupełnij jeszcze: „${brakNaStarcie[0].tresc}”`
+      pendingPrzewinRef.current = brakNaStarcie[0].id
+      setKrok({ rodzaj: 'intro' })
+      return
+    }
+
     for (let i = 0; i < sekcje.length; i++) {
       const brak = brakujace(sekcje[i])
       if (brak.length > 0) {
@@ -544,20 +568,22 @@ export default function SurveyFlow() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={SPRING}
-              className="mx-auto flex min-h-[calc(100dvh-9rem)] max-w-[26rem] flex-col justify-center px-6 py-10"
+              className="mx-auto max-w-[26rem] px-5 pb-36 pt-7"
             >
               <span className="font-spacemono text-[10px] uppercase tracking-[0.24em] text-[#9C8345]">
-                Zanim zaczniemy
+                {sekcjaStartowa.kiedy ?? 'na start'}
               </span>
               <h2 className="mt-2.5 font-dmserif text-[34px] leading-[1.08] text-[#3B3121]">
-                Chcesz się przedstawić?
+                {sekcjaStartowa.tytul}
               </h2>
-              <p className="mt-3 max-w-[24rem] text-[14.5px] leading-relaxed text-[#6B5D42]">
-                To Twój wybór. Ankietę możesz wypełnić także w pełni anonimowo,
-                a odpowiedzi i tak analizujemy zbiorczo.
+
+              {/* Akapit „odpowiedzi analizujemy zbiorczo” usunięty — z nagrania:
+                  „nic to nie wnosi”. Zostaje samo pytanie. */}
+              <p className="mt-6 text-[15px] font-medium leading-snug text-[#3B3121]">
+                Chcesz się przedstawić?
               </p>
 
-              <div className="mt-7 grid gap-2.5">
+              <div className="mt-3 grid gap-2.5">
                 {(
                   [
                     { klucz: 'imie', tytul: 'Przedstawię się', opis: 'podasz imię i nazwisko' },
@@ -566,8 +592,8 @@ export default function SurveyFlow() {
                 ).map((opcja) => {
                   const aktywna = stan.intro.przedstawienie === opcja.klucz
                   return (
+                    <Fragment key={opcja.klucz}>
                     <button
-                      key={opcja.klucz}
                       type="button"
                       onClick={() =>
                         setStan((s) => ({
@@ -600,40 +626,84 @@ export default function SurveyFlow() {
                       </span>
                       {aktywna && <IkonaCheck className="h-4 w-4 shrink-0" />}
                     </button>
+                      {opcja.klucz === 'imie' && aktywna && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={SPRING}
+                          className="rounded-md border border-[#3B3121]/12 bg-white/70 p-4"
+                        >
+                          <label
+                            htmlFor="imie-nazwisko"
+                            className="mb-2 block font-spacemono text-[10px] uppercase tracking-[0.2em] text-[#9C8345]"
+                          >
+                            Imię i nazwisko
+                          </label>
+                          <input
+                            id="imie-nazwisko"
+                            type="text"
+                            autoFocus
+                            autoComplete="name"
+                            value={stan.intro.imieNazwisko}
+                            onChange={(e) =>
+                              setStan((s) => ({
+                                ...s,
+                                intro: { ...s.intro, imieNazwisko: e.target.value },
+                              }))
+                            }
+                            placeholder="np. Anna Kowalska"
+                            className="min-h-[44px] w-full rounded-md border border-[#3B3121]/20 bg-white p-3.5 text-[16px] text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
+                          />
+                        </motion.div>
+                      )}
+                    </Fragment>
                   )
                 })}
 
-                {stan.intro.przedstawienie === 'imie' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={SPRING}
-                    className="rounded-md border border-[#3B3121]/12 bg-white/70 p-4"
-                  >
-                    <label
-                      htmlFor="imie-nazwisko"
-                      className="mb-2 block font-spacemono text-[10px] uppercase tracking-[0.2em] text-[#9C8345]"
-                    >
-                      Imię i nazwisko
-                    </label>
-                    <input
-                      id="imie-nazwisko"
-                      type="text"
-                      autoFocus
-                      autoComplete="name"
-                      value={stan.intro.imieNazwisko}
-                      onChange={(e) =>
-                        setStan((s) => ({
-                          ...s,
-                          intro: { ...s.intro, imieNazwisko: e.target.value },
-                        }))
-                      }
-                      placeholder="np. Anna Kowalska"
-                      className="min-h-[44px] w-full rounded-md border border-[#3B3121]/20 bg-white p-3.5 text-[16px] text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
-                    />
-                  </motion.div>
-                )}
               </div>
+
+              {/* Pytania sekcji startowej — na tym samym ekranie co wybór wyżej.
+                  Wcześniej była to osobna strona „Twoja obecność”. */}
+              <div className="mt-7 flex flex-col gap-3.5">
+                {sekcjaStartowa.pytania
+                  .filter((q) => spelniony(q.pokaz_jesli, stan.odpowiedzi))
+                  .map((q) => (
+                    <div
+                      key={q.id}
+                      id={`pytanie-${q.id}`}
+                      className={cn(
+                        'rounded-md border bg-white p-4 transition-shadow',
+                        brakujacePytanie === q.id
+                          ? 'border-[#C9A14A] shadow-[0_0_0_3px_rgba(201,161,74,0.18)]'
+                          : 'border-[#3B3121]/10 shadow-[0_3px_16px_-10px_rgba(59,49,33,0.35)]',
+                      )}
+                    >
+                      {q.wymagane && (
+                        <span className="mb-1 block font-spacemono text-[9.5px] uppercase tracking-[0.2em] text-[#9C7A2C]">
+                          wymagane
+                        </span>
+                      )}
+                      <p className="mb-4 text-[15px] font-medium leading-snug text-[#3B3121]">
+                        {q.tresc}
+                      </p>
+                      <PytanieRenderer
+                        pytanie={q}
+                        wartosc={stan.odpowiedzi[q.id] ?? null}
+                        onChange={(w) => ustawOdpowiedz(q.id, w)}
+                      />
+                    </div>
+                  ))}
+              </div>
+
+              {blad && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-5 rounded-md border border-[#C9A14A]/40 bg-[#FBF3DF] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#8A6A1E]"
+                >
+                  {blad}
+                </motion.p>
+              )}
             </motion.section>
           )}
 
@@ -823,7 +893,19 @@ export default function SurveyFlow() {
                 disabled={!introGotowe}
                 // Wracamy do sekcji, na której użytkownik był, zanim tu wszedł
                 // (przy pierwszym przejściu jest to po prostu sekcja 1).
-                onClick={() => idzDo(stan.biezacaSekcja)}
+                //
+                // Na tym ekranie są teraz też pytania obowiązkowe o obecność,
+                // więc sprawdzamy je tak samo jak w każdej innej sekcji.
+                onClick={() => {
+                  const brak = brakujace(sekcjaStartowa)
+                  if (brak.length > 0) {
+                    setBlad(`Uzupełnij jeszcze: „${brak[0].tresc}”`)
+                    setBrakujacePytanie(brak[0].id)
+                    przewinDoPytania(brak[0].id)
+                    return
+                  }
+                  idzDo(stan.biezacaSekcja)
+                }}
                 // UWAGA: `disabled:bg-[#XXXXXX]/12` (arbitralny hex + alpha)
                 // nie generuje się w Tailwind 3 — stan nieaktywny musi mieć
                 // pełny, konkretny kolor.

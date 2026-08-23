@@ -200,8 +200,8 @@ export function RobotStage({ className }: { className?: string }) {
           aria-hidden="true"
           className="podpowiedz-robota pointer-events-none absolute right-[7%] top-[12%] z-20 flex items-center gap-2"
         >
-          <span className="h-px w-7 bg-gradient-to-l from-[#C9A14A]/75 to-transparent" />
-          <span className="whitespace-nowrap rounded-full border border-[#C9A14A]/45 bg-[#070A12]/75 px-3 py-1.5 font-spacemono text-[10px] uppercase tracking-[0.18em] text-[#E2D2A6] backdrop-blur-sm">
+          <span className="h-px w-7 bg-gradient-to-l from-[#9C7A2C]/70 to-transparent" />
+          <span className="whitespace-nowrap rounded-full border border-[#C9A14A]/45 bg-[#FBF8F3]/90 px-3 py-1.5 font-spacemono text-[10px] uppercase tracking-[0.18em] text-[#9C7A2C] backdrop-blur-sm">
             {trescPodpowiedzi}
           </span>
         </div>

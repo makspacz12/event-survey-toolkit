@@ -13,18 +13,18 @@ import { RobotStage } from '@/components/robot/RobotStage'
  */
 export default function LandingPage({ onStart }: { onStart: () => void }) {
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#070A12]">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-paper">
       {/* warstwa: gradienty tła */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(95%_55%_at_50%_112%,rgba(159,184,200,0.14),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,10,18,0)_45%,rgba(7,10,18,0.9)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(95%_55%_at_50%_112%,rgba(201,161,74,0.16),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(251,248,243,0)_45%,rgba(241,233,219,0.92)_100%)]" />
       </div>
 
       {/* warstwa: animowane ścieżki + spotlight */}
       <BackgroundPaths />
       <Spotlight
         className="-top-28 left-1/2 -translate-x-1/2 md:-top-20"
-        fill="#C6D6E0"
+        fill="#D8C9A4"
       />
 
       {/* ŚRODEK: robot 3D (moduł odizolowany — patrz components/robot/) */}
@@ -50,10 +50,10 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           transition={{ duration: 0.9, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
           className="mt-3 font-display text-[clamp(1.75rem,8.5vw,2.5rem)] font-semibold leading-[0.95] tracking-[-0.02em]"
         >
-          <span className="block bg-gradient-to-b from-[#F4F7FA] to-[#A9BBC9] bg-clip-text text-transparent">
+          <span className="block bg-gradient-to-b from-[#3B3121] to-[#6B5D42] bg-clip-text text-transparent">
             MASTERCLASS
           </span>
-          <span className="mt-0.5 block text-[#D9B771]">LEADERSHIP</span>
+          <span className="mt-0.5 block text-[#9C7A2C]">LEADERSHIP</span>
         </motion.h1>
 
         {/* podtytuł z liniami po bokach */}
@@ -64,7 +64,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           className="mt-3.5 flex items-center gap-3"
         >
           <span className="h-px w-8 bg-gradient-to-r from-transparent to-[#C9A14A]/60" />
-          <span className="font-dmserif text-[19px] leading-none text-[#E2D2A6]">
+          <span className="font-dmserif text-[19px] leading-none text-[#9C7A2C]">
             Ankieta uczestnika
           </span>
           <span className="h-px w-8 bg-gradient-to-l from-transparent to-[#C9A14A]/60" />
@@ -75,15 +75,15 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.8 }}
-          className="mt-3 max-w-[19rem] text-[12.5px] leading-relaxed text-slate-300/75"
+          className="mt-3 max-w-[19rem] text-[12.5px] leading-relaxed text-[#6B5D42]"
         >
-          Powiedz nam, jak było. Zajmie kilka minut, możesz wypełnić w pełni
-          anonimowo. Twoje odpowiedzi pomogą nam ulepszyć przyszłoroczną edycję.
+          Twoje odpowiedzi decydują o tym, co zmienimy za rok: program, miejsce,
+          formułę konkursu. Pięć minut, możesz wypełnić anonimowo.
         </motion.p>
       </header>
 
       {/* DÓŁ: przycisk Start (scrim oddziela od robota) */}
-      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#070A12] via-[#070A12]/88 to-transparent px-6 pb-[max(1.7rem,env(safe-area-inset-bottom))] pt-12">
+      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-parchment via-parchment/88 to-transparent px-6 pb-[max(1.7rem,env(safe-area-inset-bottom))] pt-12">
         <motion.div
           initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
@@ -92,8 +92,8 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           <ActionButton variant="gold" label="Start" onClick={onStart} />
           {/* Podpis pod przyciskiem, nie w nim: mówi wprost, co się stanie
               po kliknięciu, i ile to zajmie. */}
-          <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-slate-400/70">
-            Start rozpocznie ankietę. Zajmie około 5 minut.
+          <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-[#8A7A55]">
+            Start rozpocznie ankietę.
           </p>
         </motion.div>
       </div>

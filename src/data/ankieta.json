@@ -3,31 +3,22 @@
   "podtytul": "Ankieta uczestnika, młodzi liderzy",
   "sekcje": [
     {
-      "id": "obecnosc",
-      "tytul": "Twoja obecność",
-      "tytul_krotki": "Obecność",
+      "id": "zanim-zaczniemy",
+      "tytul": "Zanim zaczniemy",
+      "tytul_krotki": "Start",
       "kiedy": "na start",
-      "opis": "Dzięki tym dwóm odpowiedziom pokażemy Ci tylko pytania o to, w czym naprawdę brałeś(-aś) udział.",
       "pytania": [
         {
-          "id": "obecnosc-dni",
-          "typ": "wiele_wyborow",
-          "tresc": "W których dniach wydarzenia uczestniczyłeś(-aś)?",
-          "opcje": [
-            "Piątek (16.10)",
-            "Sobota (17.10)"
-          ],
+          "id": "obecnosc-piatek",
+          "typ": "tak_nie",
+          "tresc": "Czy brałeś(-aś) udział w dniu otwierającym, w piątek 16 października?",
           "wymagane": true
         },
         {
-          "id": "sciezka-1600",
-          "typ": "jeden_wybor",
-          "tresc": "Gdzie byłeś(-aś) w sobotę o 16:00?",
-          "opcje": [
-            "Finał konkursu (Sala Konwersatorium)",
-            "III debata o geopolityce (Sala Petrus)",
-            "Nie było mnie wtedy"
-          ]
+          "id": "obecnosc-sobota",
+          "typ": "tak_nie",
+          "tresc": "Czy brałeś(-aś) udział w wydarzeniu w sobotę 17 października?",
+          "wymagane": true
         }
       ]
     },
@@ -37,10 +28,19 @@
       "tytul_krotki": "Otwarcie",
       "kiedy": "piątek, 16 października",
       "pokaz_jesli": {
-        "pytanie": "obecnosc-dni",
-        "zawiera": "Piątek (16.10)"
+        "pytanie": "obecnosc-piatek",
+        "rowne": "tak"
       },
       "pytania": [
+        {
+          "id": "pt-integracja",
+          "typ": "skala",
+          "tresc": "Jak oceniasz spotkanie integracyjne?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "zdjecie": "/prelegenci/robot-barbara.jpg"
+        },
         {
           "id": "pt-debata-otwarcia",
           "typ": "skala",
@@ -58,26 +58,17 @@
           "max": 10,
           "nieobecnosc": true,
           "zdjecie": "/prelegenci/waldemar-malicki.jpg"
-        },
-        {
-          "id": "pt-integracja",
-          "typ": "skala",
-          "tresc": "Jak oceniasz spotkanie integracyjne (Opatówka, robot Barbara i twórcy z AGH)?",
-          "min": 1,
-          "max": 10,
-          "nieobecnosc": true,
-          "zdjecie": "/prelegenci/robot-barbara.jpg"
         }
       ]
     },
     {
-      "id": "sobota-debaty",
-      "tytul": "Debaty poranne",
+      "id": "debaty",
+      "tytul": "Debaty",
       "tytul_krotki": "Debaty",
-      "kiedy": "sobota, przed południem",
+      "kiedy": "sobota, 17 października",
       "pokaz_jesli": {
-        "pytanie": "obecnosc-dni",
-        "zawiera": "Sobota (17.10)"
+        "pytanie": "obecnosc-sobota",
+        "rowne": "tak"
       },
       "pytania": [
         {
@@ -151,24 +142,6 @@
           ]
         },
         {
-          "id": "sb-debaty-uwagi",
-          "typ": "tekst",
-          "tresc": "Co najbardziej zapamiętasz z debat?",
-          "placeholder": "Jedna myśl, cytat, moment…"
-        }
-      ]
-    },
-    {
-      "id": "sobota-debata3",
-      "tytul": "Debata geopolityczna",
-      "tytul_krotki": "Geopolityka",
-      "kiedy": "sobota, 16:00, Sala Petrus",
-      "pokaz_jesli": {
-        "pytanie": "sciezka-1600",
-        "rowne": "III debata o geopolityce (Sala Petrus)"
-      },
-      "pytania": [
-        {
           "id": "sb-debata3",
           "typ": "skala",
           "tresc": "III debata: „Na zakręcie geopolitycznym. Przywództwo w czasie przemian”",
@@ -206,17 +179,23 @@
           "min": 1,
           "max": 10,
           "nieobecnosc": true
+        },
+        {
+          "id": "sb-debaty-uwagi",
+          "typ": "tekst",
+          "tresc": "Co najbardziej zapamiętasz z debat?",
+          "placeholder": "Jedna myśl, cytat, moment…"
         }
       ]
     },
     {
       "id": "konkurs",
-      "tytul": "Półfinał Talent Fund",
-      "tytul_krotki": "Półfinał",
-      "kiedy": "sobota, lunch przy stolikach",
+      "tytul": "Część konkursowa",
+      "tytul_krotki": "Konkurs",
+      "kiedy": "sobota, 17 października",
       "pokaz_jesli": {
-        "pytanie": "obecnosc-dni",
-        "zawiera": "Sobota (17.10)"
+        "pytanie": "obecnosc-sobota",
+        "rowne": "tak"
       },
       "pytania": [
         {
@@ -250,24 +229,6 @@
           "komentarz": true
         },
         {
-          "id": "kk-uwagi",
-          "typ": "tekst",
-          "tresc": "Jak oceniasz konkurs i co warto w nim zmienić?",
-          "placeholder": "Twoja opinia o konkursie, pomysły na usprawnienia, co zmienić w formule…"
-        }
-      ]
-    },
-    {
-      "id": "final",
-      "tytul": "Finał konkursu",
-      "tytul_krotki": "Finał",
-      "kiedy": "sobota, 16:00, Sala Konwersatorium",
-      "pokaz_jesli": {
-        "pytanie": "sciezka-1600",
-        "rowne": "Finał konkursu (Sala Konwersatorium)"
-      },
-      "pytania": [
-        {
           "id": "fn-final",
           "typ": "skala",
           "tresc": "Jak oceniasz finał „Sprzedaj mi swoją wizję w windzie” (13 prezentacji po 5 minut)?",
@@ -285,15 +246,21 @@
             "pytanie": "fn-final",
             "rozne_od": "nieobecny"
           }
+        },
+        {
+          "id": "kk-uwagi",
+          "typ": "tekst",
+          "tresc": "Jak oceniasz konkurs i co warto w nim zmienić?",
+          "placeholder": "Twoja opinia o konkursie, pomysły na usprawnienia, co zmienić w formule…"
         }
       ]
     },
     {
-      "id": "organizacja",
-      "tytul": "Strona organizacyjna",
-      "tytul_krotki": "Organizacja",
-      "kiedy": "całe wydarzenie",
-      "opis": "Przy każdym pytaniu możesz dodać opcjonalny komentarz. Im konkretniej, tym lepiej dla nas.",
+      "id": "podsumowanie",
+      "tytul": "Organizacja i podsumowanie",
+      "tytul_krotki": "Podsumowanie",
+      "kiedy": "na koniec",
+      "opis": "Zostało ostatnie pytanie obowiązkowe. Reszta jest w pełni opcjonalna.",
       "pytania": [
         {
           "id": "org-rekrutacja",
@@ -328,16 +295,7 @@
           "min": 1,
           "max": 10,
           "komentarz": true
-        }
-      ]
-    },
-    {
-      "id": "podsumowanie",
-      "tytul": "Twoje podsumowanie",
-      "tytul_krotki": "Podsumowanie",
-      "kiedy": "na koniec",
-      "opis": "Zostało ostatnie pytanie obowiązkowe. Reszta jest w pełni opcjonalna.",
-      "pytania": [
+        },
         {
           "id": "nps",
           "typ": "skala",

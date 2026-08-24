@@ -42,3 +42,11 @@ _kopia-*/
 
 # Notatki wewnetrzne z omowienia aplikacji — nie do publicznego repozytorium
 UWAGI-MATEUSZA.md
+
+# Nagrania audio z omowien
+*.m4a
+*.mp3
+*.wav
+
+# Kopia zapasowa nagran
+_nagrania-kopia/

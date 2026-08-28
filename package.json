@@ -1,0 +1,45 @@
+{
+  "name": "event-survey-toolkit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Survey app for the CTN Masterclass Leadership event, with Excel import/export tooling.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "questions:to-excel": "node scripts/json-to-excel.mjs",
+    "questions:from-excel": "node scripts/excel-to-json.mjs",
+    "example-sheet": "node scripts/example-sheet.mjs",
+    "test:connection": "node scripts/test-connection.mjs",
+    "test:script": "node scripts/test-script.mjs",
+    "test:scenarios": "node scripts/test-scenarios.mjs",
+    "test:load": "node scripts/test-load.mjs",
+    "test:throughput": "node scripts/test-throughput.mjs",
+    "refresh-instructions": "node scripts/refresh-instructions.mjs",
+    "columns": "node scripts/generate-columns.mjs",
+    "columns:excel": "node scripts/columns-to-excel.mjs",
+    "test:fields": "node scripts/test-all-fields.mjs"
+  },
+  "dependencies": {
+    "@splinetool/react-spline": "^2.2.6",
+    "@splinetool/runtime": "^1.9.28",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.3.19",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.40",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5",
+    "xlsx": "^0.18.5"
+  }
+}

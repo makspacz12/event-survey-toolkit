@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: #f1e9db;
+  color: #3b3121;
+  /* Krój z tailwind.config.js. Wcześniej był tu Inter — kroju, którego
+     projekt w ogóle nie ładuje — więc treść pytań renderowała się fontem
+     systemowym zamiast Outfit. */
+  font-family: 'Outfit', system-ui, sans-serif;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  /* Strony z nadmiarem treści przewijają się (pojawiają się paski) */
+  overflow-y: auto;
+}
+
+/* Paski przewijania — wąskie, w palecie złota (żeby pasowały do reszty) */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(201, 161, 74, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 161, 74, 0.6);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 161, 74, 0.45) transparent;
+}
+
+/* Stan ładowania: szkieletowy shimmer zamiast kręcącego się spinnera
+   (DESIGN.md §4 — spinnery są zakazane). Kształt naśladuje docelowy układ. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(201, 161, 74, 0.08);
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(201, 161, 74, 0.14),
+    transparent
+  );
+  animation: shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Ścieżki w tle landingu. Animacja przez stroke-dashoffset zamiast
+   JavaScriptu — przeglądarka liczy ją poza głównym wątkiem, więc nie
+   konkuruje o CPU ze sceną 3D ani z przewijaniem. */
+.sciezka-tla {
+  stroke-dasharray: 260 1400;
+  animation-name: plyn;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes plyn {
+  from {
+    stroke-dashoffset: 1660;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Podpowiedź przy robocie („Dotknij mnie"). Delikatne unoszenie przyciąga
+   wzrok, nie krzycząc. Animacja w CSS, nie w JavaScripcie — przeglądarka liczy
+   ją poza głównym wątkiem, więc nie konkuruje o procesor ze sceną 3D. */
+.podpowiedz-robota {
+  animation:
+    podpowiedz-wejscie 520ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    podpowiedz-unos 3.2s ease-in-out 520ms infinite;
+}
+
+@keyframes podpowiedz-wejscie {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes podpowiedz-unos {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Szanuj ustawienie systemowe „ogranicz ruch" (DESIGN.md §6). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

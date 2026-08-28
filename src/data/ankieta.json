@@ -1,0 +1,326 @@
+{
+  "tytul": "Masterclass Leadership 2026",
+  "podtytul": "Ankieta uczestnika, młodzi liderzy",
+  "sekcje": [
+    {
+      "id": "zanim-zaczniemy",
+      "tytul": "Zanim zaczniemy",
+      "tytul_krotki": "Start",
+      "kiedy": "na start",
+      "pytania": [
+        {
+          "id": "obecnosc-piatek",
+          "typ": "tak_nie",
+          "tresc": "Czy brałeś(-aś) udział w piątek, 16 października (dzień otwarcia)?",
+          "wymagane": true
+        },
+        {
+          "id": "obecnosc-sobota",
+          "typ": "tak_nie",
+          "tresc": "Czy brałeś(-aś) udział w sobotę, 17 października (debaty i konkurs)?",
+          "wymagane": true
+        }
+      ]
+    },
+    {
+      "id": "piatek",
+      "tytul": "Wieczór otwarcia",
+      "tytul_krotki": "Otwarcie",
+      "kiedy": "piątek, 16 października",
+      "pokaz_jesli": {
+        "pytanie": "obecnosc-piatek",
+        "rowne": "tak"
+      },
+      "pytania": [
+        {
+          "id": "pt-integracja",
+          "typ": "skala",
+          "tresc": "Jak oceniasz spotkanie integracyjne?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "zdjecie": "/prelegenci/robot-barbara.jpg",
+          "komentarz": true
+        },
+        {
+          "id": "pt-debata-otwarcia",
+          "typ": "skala",
+          "tresc": "Jak oceniasz debatę otwierającą „Rewolucja świadomości: czy decyzje zapadają, zanim je podejmiemy?”",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "komentarz": true
+        },
+        {
+          "id": "pt-debata-otwarcia-kto",
+          "typ": "jeden_wybor",
+          "tresc": "Kto w debacie otwierającej wniósł Twoim zdaniem najwięcej?",
+          "opcje": [
+            {
+              "tekst": "dr Paweł Boguszewski",
+              "zdjecie": "/prelegenci/pawel-boguszewski.jpg"
+            },
+            {
+              "tekst": "Barbara – robot humanoidalny",
+              "zdjecie": "/prelegenci/robot-barbara.jpg"
+            },
+            {
+              "tekst": "Maciej Kawecki (prowadzący)",
+              "zdjecie": "/prelegenci/maciej-kawecki.jpg"
+            }
+          ]
+        },
+        {
+          "id": "pt-koncert",
+          "typ": "skala",
+          "tresc": "Jak oceniasz koncert Waldemara Malickiego?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "zdjecie": "/prelegenci/waldemar-malicki.jpg",
+          "komentarz": true
+        }
+      ]
+    },
+    {
+      "id": "debaty",
+      "tytul": "Debaty",
+      "tytul_krotki": "Debaty",
+      "kiedy": "sobota, 17 października",
+      "pokaz_jesli": {
+        "pytanie": "obecnosc-sobota",
+        "rowne": "tak"
+      },
+      "pytania": [
+        {
+          "id": "sb-debata1",
+          "typ": "skala",
+          "tresc": "I debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć”",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "komentarz": true
+        },
+        {
+          "id": "sb-debata1-kto",
+          "typ": "jeden_wybor",
+          "tresc": "Kto w I debacie wniósł Twoim zdaniem najwięcej?",
+          "opcje": [
+            {
+              "tekst": "kard. Grzegorz Ryś",
+              "zdjecie": "/prelegenci/grzegorz-rys.jpg"
+            },
+            {
+              "tekst": "prof. Marcin Majewski",
+              "zdjecie": "/prelegenci/marcin-majewski.jpg"
+            },
+            {
+              "tekst": "Grażyna Kulczyk",
+              "zdjecie": "/prelegenci/grazyna-kulczyk.jpg"
+            },
+            {
+              "tekst": "prof. Bartosz Kuźniarz",
+              "zdjecie": "/prelegenci/bartosz-kuzniarz.jpg"
+            },
+            {
+              "tekst": "Patrycjusz Wyżga (prowadzący)",
+              "zdjecie": "/prelegenci/patrycjusz-wyzga.jpg"
+            }
+          ]
+        },
+        {
+          "id": "sb-debata2",
+          "typ": "skala",
+          "tresc": "II debata: „Innowacje, które zmieniają świat”",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "komentarz": true
+        },
+        {
+          "id": "sb-debata2-kto",
+          "typ": "jeden_wybor",
+          "tresc": "Kto w II debacie wniósł Twoim zdaniem najwięcej?",
+          "opcje": [
+            {
+              "tekst": "prof. Krzysztof Górski",
+              "zdjecie": "/prelegenci/krzysztof-gorski.jpg"
+            },
+            {
+              "tekst": "Aleksander Kutela",
+              "zdjecie": "/prelegenci/aleksander-kutela.jpg"
+            },
+            {
+              "tekst": "Szymon Midera",
+              "zdjecie": "/prelegenci/szymon-midera.jpg"
+            },
+            {
+              "tekst": "Jarosław Królewski",
+              "zdjecie": "/prelegenci/jaroslaw-krolewski.jpg"
+            },
+            {
+              "tekst": "Petros Psyllos (prowadzący)",
+              "zdjecie": "/prelegenci/petros-psyllos.jpg"
+            }
+          ]
+        },
+        {
+          "id": "sb-debata3",
+          "typ": "skala",
+          "tresc": "III debata: „Na zakręcie geopolitycznym. Przywództwo w czasie przemian”",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "komentarz": true
+        },
+        {
+          "id": "sb-debata3-kto",
+          "typ": "jeden_wybor",
+          "tresc": "Kto w III debacie wniósł Twoim zdaniem najwięcej?",
+          "opcje": [
+            {
+              "tekst": "prof. Hanna Suchocka",
+              "zdjecie": "/prelegenci/hanna-suchocka.jpg"
+            },
+            {
+              "tekst": "Mark Brzezinski",
+              "zdjecie": "/prelegenci/mark-brzezinski.jpg"
+            },
+            {
+              "tekst": "prof. Bogdan Góralczyk",
+              "zdjecie": "/prelegenci/bogdan-goralczyk.jpg"
+            },
+            {
+              "tekst": "Patrycjusz Wyżga (prowadzący)",
+              "zdjecie": "/prelegenci/patrycjusz-wyzga.jpg"
+            }
+          ]
+        },
+        {
+          "id": "sb-partnerstwo",
+          "typ": "skala",
+          "tresc": "Rozmowa o książce „Partnerstwo” z Markiem Brzezińskim i Olgą Leonowicz",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "komentarz": true
+        },
+        {
+          "id": "sb-debaty-uwagi",
+          "typ": "tekst",
+          "tresc": "Co najbardziej zapamiętasz z debat?",
+          "placeholder": "Jedna myśl, cytat, moment…"
+        }
+      ]
+    },
+    {
+      "id": "konkurs",
+      "tytul": "Część konkursowa",
+      "tytul_krotki": "Konkurs",
+      "kiedy": "sobota, 17 października",
+      "pokaz_jesli": {
+        "pytanie": "obecnosc-sobota",
+        "rowne": "tak"
+      },
+      "pytania": [
+        {
+          "id": "kk-polfinal-format",
+          "typ": "skala",
+          "tresc": "Jak oceniasz formułę półfinału przy stolikach (lunch z gośćmi VIP, prezentacje przy stole)?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie brałem(-am) udziału",
+          "komentarz": true
+        },
+        {
+          "id": "kk-feedback-liderzy",
+          "typ": "tak_nie",
+          "tresc": "Czy podczas konkursu dostałeś(-aś) wartościowy feedback od doświadczonych liderów?",
+          "komentarz": true
+        },
+        {
+          "id": "fn-final",
+          "typ": "skala",
+          "tresc": "Jak oceniasz formułę finału (elevator pitch przed jury)?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie brałem(-am) udziału",
+          "komentarz": true
+        },
+        {
+          "id": "kk-zasady",
+          "typ": "tak_nie",
+          "tresc": "Czy zasady konkursu (złote bilety, przejście do finału, ocena jury) były dla Ciebie jasne?",
+          "komentarz": true
+        },
+        {
+          "id": "kk-polecenie",
+          "typ": "tak_nie",
+          "tresc": "Czy poleciłbyś(-abyś) udział w konkursie swoim znajomym?",
+          "komentarz": true
+        }
+      ]
+    },
+    {
+      "id": "podsumowanie",
+      "tytul": "Organizacja i podsumowanie",
+      "tytul_krotki": "Podsumowanie",
+      "kiedy": "na koniec",
+      "pytania": [
+        {
+          "id": "org-rekrutacja",
+          "typ": "tak_nie",
+          "tresc": "Czy proces rekrutacji i jego zasady były dla Ciebie jasne?",
+          "komentarz": true
+        },
+        {
+          "id": "org-transport",
+          "typ": "skala",
+          "tresc": "Jak oceniasz transport?",
+          "min": 1,
+          "max": 10,
+          "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie korzystałem(-am)",
+          "komentarz": true
+        },
+        {
+          "id": "org-jedzenie",
+          "typ": "skala",
+          "tresc": "Jak oceniasz jedzenie (poczęstunek, lunch)?",
+          "min": 1,
+          "max": 10,
+          "komentarz": true
+        },
+        {
+          "id": "org-miejsce",
+          "typ": "skala",
+          "tresc": "Jak oceniasz miejsce wydarzenia (Opactwo w Tyńcu)?",
+          "min": 1,
+          "max": 10,
+          "komentarz": true
+        },
+        {
+          "id": "pod-wartosc-i-poprawa",
+          "typ": "tekst",
+          "tresc": "Gdybyś mógł(mogła) zmienić jedną rzecz podczas wydarzenia, co by to było?",
+          "placeholder": "Opcjonalnie, szczerze…"
+        },
+        {
+          "id": "pod-wrazenie",
+          "typ": "tekst",
+          "tresc": "Co zrobiło na Tobie największe wrażenie, wniosło największą wartość?",
+          "placeholder": "Moment, rozmowa, wystąpienie…"
+        },
+        {
+          "id": "pod-wlasnymi-slowami",
+          "typ": "tekst",
+          "tresc": "Gdybyś miał(a) opisać te dwa dni jednym zdaniem, jak by ono brzmiało?",
+          "placeholder": "Jedno zdanie, własnymi słowami…",
+          "wymagane": true
+        }
+      ]
+    }
+  ]
+}

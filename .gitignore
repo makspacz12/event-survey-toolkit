@@ -1,0 +1,61 @@
+# zależności i wyniki budowania
+node_modules/
+dist/
+
+# konfiguracja z hasłami — NIGDY do repozytorium
+.env.local
+.env*.local
+*.local
+
+# zrzuty ekranu i artefakty testów
+.playwright-mcp/
+*.png
+!public/**/*.png
+!docs/screenshots/**/*.png
+
+# pliki robocze Excela (generowane komendami npm)
+ankieta.xlsx
+ankieta.xlsx.bak
+Kolumny-ankiety-MCL-2026.xlsx
+sciaga-do-sprawdzenia.txt
+src/data/ankieta.json.bak
+
+# systemowe
+.DS_Store
+Thumbs.db
+
+# katalog na artefakty testowe i pliki tymczasowe
+_smieci/
+
+# Skrypt z prawdziwym hasłem i identyfikatorem arkusza — nie trafia do repozytorium
+apps-script/Kod-DO-WKLEJENIA.gs
+apps-script/Kod-NOWY-ARKUSZ.gs
+INSTRUKCJA-NOWY-ARKUSZ.md
+
+# Edytor pytan — osobne narzedzie lokalne, nie czesc aplikacji
+edytor/
+
+# Transkrypcja nagran — osobne narzedzie lokalne
+transkrypcja/
+
+# Kopie zapasowe przed wprowadzaniem uwag
+_kopia-*/
+
+# Nagrania z omowieniem aplikacji — ciezkie, nie naleza do repozytorium
+*.mp4
+*.mov
+
+# Notatki wewnetrzne z omowienia aplikacji — nie do publicznego repozytorium
+UWAGI-MATEUSZA.md
+
+# Robocze instrukcje operacyjne dla fundacji CTN — nie dokumentacja techniczna
+INSTRUKCJA-DLA-CTN.md
+PLAN-ZBIERANIE-ODPOWIEDZI.md
+
+# Nagrania audio z omowien
+*.m4a
+*.mp3
+*.wav
+
+# Kopia zapasowa nagran
+_nagrania-kopia/

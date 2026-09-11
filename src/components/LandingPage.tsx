@@ -37,7 +37,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.15 }}
-          className="font-spacemono text-[10px] font-medium uppercase leading-relaxed tracking-[0.22em] text-slate-400/70"
+          className="font-spacemono text-[11px] font-medium uppercase leading-relaxed tracking-[0.22em] text-slate-400/70"
         >
           Tyniec · 16 i 17 października 2026
         </motion.span>
@@ -64,7 +64,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           className="mt-3.5 flex items-center gap-3"
         >
           <span className="h-px w-8 bg-gradient-to-r from-transparent to-[#C9A14A]/60" />
-          <span className="font-dmserif text-[19px] leading-none text-[#9C7A2C]">
+          <span className="font-dmserif text-[21px] leading-none text-[#9C7A2C]">
             Ankieta uczestnika
           </span>
           <span className="h-px w-8 bg-gradient-to-l from-transparent to-[#C9A14A]/60" />
@@ -75,12 +75,12 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.8 }}
-          className="mt-3.5 flex max-w-[20.5rem] flex-col gap-2 text-center"
+          className="mt-3.5 flex max-w-[22rem] flex-col gap-2 text-center"
         >
-          <p className="font-dmserif text-[15px] leading-snug text-[#4A3E29]">
+          <p className="font-dmserif text-[17px] leading-snug text-[#4A3E29]">
             Dziękujemy, że byliście z nami!
           </p>
-          <p className="text-[12.5px] leading-[1.5] text-[#6B5D42]">
+          <p className="text-[14px] leading-[1.5] text-[#6B5D42]">
             Teraz Wasza kolej: powiedzcie nam, co się sprawdziło, a co warto
             zmienić. Wasze opinie realnie wpływają na to, w jaki sposób będzie
             wyglądać kolejna edycja.
@@ -89,7 +89,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
               smaller font. The short line above it echoes the motif under the
               title and clearly separates it from the invitation text. */}
           <span className="mx-auto mt-1 block h-px w-10 bg-[#C9A14A]/45" />
-          <p className="text-[11.5px] leading-snug text-[#8A7A55]">
+          <p className="text-[13px] leading-snug text-[#8A7A55]">
             Ankieta zajmie około 5 minut i można ją wypełnić anonimowo.
           </p>
         </motion.div>
@@ -104,7 +104,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         >
           <ActionButton variant="gold" label="Rozpocznij" onClick={onStart} />
           {/* Event address under the button — a footer, not an instruction. */}
-          <p className="mt-2.5 text-center font-spacemono text-[11px] tracking-[0.04em] text-[#8A7A55]">
+          <p className="mt-2.5 text-center font-spacemono text-[12px] tracking-[0.04em] text-[#8A7A55]">
             masterclassleadership.org
           </p>
         </motion.div>

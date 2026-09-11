@@ -102,6 +102,18 @@ function AnswerField({
     if (nieobecny && otwarty) setOtwarty(false)
   }, [nieobecny])
 
+  // A "No" to a yes/no question is exactly the moment we want to hear more —
+  // so the comment field opens itself, with a prompt that asks for specifics
+  // instead of the generic placeholder. Switching back to "Yes" folds it away
+  // again, unless something has already been typed.
+  const odmowa = pytanie.typ === 'tak_nie' && wartosc === 'nie'
+
+  useEffect(() => {
+    if (!chce) return
+    if (odmowa && !otwarty) setOtwarty(true)
+    if (!odmowa && otwarty && komentarz === '') setOtwarty(false)
+  }, [odmowa])
+
   const przycisk =
     chce && !otwarty ? (
       <button
@@ -131,7 +143,9 @@ function AnswerField({
           value={komentarz}
           onChange={(e) => onKomentarz(e.target.value)}
           rows={2}
-          placeholder="Twój komentarz…"
+          placeholder={
+            odmowa ? 'Powiedz nam, co moglibyśmy zrobić lepiej' : 'Twój komentarz…'
+          }
           className="mt-3 w-full resize-none rounded-md border border-dashed border-[#3B3121]/25 bg-[#FDFBF7] p-3 text-[14px] leading-relaxed text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
         />
       )}

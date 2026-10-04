@@ -45,7 +45,7 @@
         {
           "id": "pt-debata-otwarcia",
           "typ": "skala",
-          "tresc": "Jak oceniasz debatę otwierającą „Rewolucja świadomości: czy decyzje zapadają, zanim je podejmiemy?”",
+          "tresc": "Jak oceniasz debatę otwierającą „Rewolucja świadomości: czy nasze decyzje naprawdę należą do nas?”",
           "min": 1,
           "max": 10,
           "nieobecnosc": true,
@@ -61,8 +61,12 @@
               "zdjecie": "/prelegenci/pawel-boguszewski.jpg"
             },
             {
-              "tekst": "Barbara – robot humanoidalny",
-              "zdjecie": "/prelegenci/robot-barbara.jpg"
+              "tekst": "ks. prof. Wojciech Grygiel",
+              "zdjecie": "/prelegenci/wojciech-grygiel.jpg"
+            },
+            {
+              "tekst": "prof. Marcin Majewski",
+              "zdjecie": "/prelegenci/marcin-majewski.jpg"
             },
             {
               "tekst": "Maciej Kawecki (prowadzący)",
@@ -107,8 +111,8 @@
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty?",
           "opcje": [
             {
-              "tekst": "kard. Grzegorz Ryś",
-              "zdjecie": "/prelegenci/grzegorz-rys.jpg"
+              "tekst": "Krzysztof Zanussi",
+              "zdjecie": "/prelegenci/krzysztof-zanussi.jpg"
             },
             {
               "tekst": "prof. Marcin Majewski",
@@ -119,7 +123,7 @@
               "zdjecie": "/prelegenci/grazyna-kulczyk.jpg"
             },
             {
-              "tekst": "prof. Bartosz Kuźniarz",
+              "tekst": "dr hab. Bartosz Kuźniarz",
               "zdjecie": "/prelegenci/bartosz-kuzniarz.jpg"
             },
             {
@@ -143,8 +147,7 @@
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty?",
           "opcje": [
             {
-              "tekst": "prof. Krzysztof Górski",
-              "zdjecie": "/prelegenci/krzysztof-gorski.jpg"
+              "tekst": "Artur Chmielewski"
             },
             {
               "tekst": "Aleksander Kutela",
@@ -178,6 +181,10 @@
           "typ": "jeden_wybor",
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty?",
           "opcje": [
+            {
+              "tekst": "kard. Grzegorz Ryś",
+              "zdjecie": "/prelegenci/grzegorz-rys.jpg"
+            },
             {
               "tekst": "prof. Hanna Suchocka",
               "zdjecie": "/prelegenci/hanna-suchocka.jpg"

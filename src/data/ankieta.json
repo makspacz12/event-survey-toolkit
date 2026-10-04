@@ -147,7 +147,8 @@
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty?",
           "opcje": [
             {
-              "tekst": "Artur Chmielewski"
+              "tekst": "Artur Chmielewski",
+              "zdjecie": "/prelegenci/artur-chmielewski.jpg"
             },
             {
               "tekst": "Aleksander Kutela",

@@ -706,6 +706,7 @@ function SharpTextarea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={rows}
+      maxLength={5000}
       placeholder={placeholder}
       className="w-full resize-none rounded-md border border-[#3B3121]/20 bg-white p-3.5 text-[16px] leading-relaxed placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
       style={{ color: INK }}

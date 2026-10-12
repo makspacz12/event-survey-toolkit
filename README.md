@@ -136,7 +136,7 @@ for local development.
 | `npm run build` | Production build into `dist/` |
 | `npm run columns` | Regenerates the column list inside the Apps Script from `ankieta.json` |
 | `npm run columns:excel` | Exports the sheet layout as `.xlsx` for the organisers |
-| `npm run test:script` | Runs the Apps Script logic locally against a mocked Google API — 85 assertions, no network |
+| `npm run test:script` | Runs the Apps Script logic locally against a mocked Google API — 113 assertions, no network |
 | `node scripts/mock-sheet-server.mjs` | Local stand-in for the deployed endpoint: the real Apps Script code on an in-memory sheet that can be read back over HTTP |
 | `node scripts/simulate-users.mjs --users 100 --concurrency 100` | A crowd of personas, each in its own headless browser, checked cell by cell against the mock sheet (`--target prod` aims at the public URL) |
 | `npm run deploy-copy -- <spreadsheet id>` | Builds the paste-ready script copy with the real passwords and spreadsheet id (git-ignored) |
@@ -180,7 +180,7 @@ spreadsheet or the network:
 
 ```
 $ npm run test:script
-=== Wynik: 85 zdanych, 0 oblanych ===
+=== Wynik: 113 zdanych, 0 oblanych ===
 ```
 
 Coverage includes concurrent writes, stale cache recovery, duplicate submissions from

@@ -50,6 +50,22 @@ const SPREADSHEET_ID = ''
 const SHEET_NAME = 'Odpowiedzi'
 
 /**
+ * Hard ceiling on the width of the tab. The survey needs 54 columns; a new
+ * question adds one. Anyone with the app's password could instead send a
+ * payload with ten thousand made-up keys, and without this line each would
+ * become a column — until the sheet hit its limits and real answers started
+ * failing. Such a request is refused as a whole.
+ */
+const MAX_COLUMNS = 300
+
+/**
+ * A cell holds at most 50 000 characters; one longer makes the WHOLE row
+ * fail, and with it the participant's answers. Text beyond this length is
+ * cut and marked, which nobody writing a survey comment will ever meet.
+ */
+const MAX_CELL_LENGTH = 45000
+
+/**
  * Second password, for maintenance commands sent to the web app (see
  * `adminAction`). Unlike TOKEN it is NOT part of the application's code,
  * so only whoever prepared this file knows it. Leave empty to switch remote
@@ -58,7 +74,7 @@ const SHEET_NAME = 'Odpowiedzi'
 const ADMIN_TOKEN = ''
 
 /** Reported by the "status" command, so you can tell which code is live. */
-const SCRIPT_VERSION = '2026-10-13.1'
+const SCRIPT_VERSION = '2026-10-13.2'
 
 /** Fixed columns, always first, in this order. */
 const FIXED_COLUMNS = [
@@ -185,6 +201,15 @@ function save(dane, arkusz) {
   const brakujace = Object.keys(dane.odpowiedzi || {}).filter(
     (id) => naglowki.indexOf(id) === -1,
   )
+  if (naglowki.length + brakujace.length > MAX_COLUMNS) {
+    throw new Error(
+      'za-duzo-kolumn: the payload would widen the tab to ' +
+        (naglowki.length + brakujace.length) +
+        ' columns (limit ' +
+        MAX_COLUMNS +
+        ')',
+    )
+  }
   if (brakujace.length > 0) {
     addColumns(arkusz, naglowki, brakujace, dane.etykiety || {})
     naglowki = naglowki.concat(brakujace)
@@ -198,9 +223,11 @@ function save(dane, arkusz) {
   )
   const wiersz = naglowki.map(function (id) {
     if (id === 'Data wysłania') return czas
-    if (id === 'Identyfikator sesji') return dane.sesja || ''
+    // Every value from the client goes through plainText, the identifiers
+    // included: they are text the browser sent, nothing more.
+    if (id === 'Identyfikator sesji') return plainText(dane.sesja || '')
     if (id === 'Kto wypełnił') return plainText(dane.kto || 'anonimowo')
-    if (id === 'Wersja ankiety') return dane.wersja || ''
+    if (id === 'Wersja ankiety') return plainText(dane.wersja || '')
     const w = (dane.odpowiedzi || {})[id]
     return w === undefined || w === null ? '' : plainText(w)
   })
@@ -226,7 +253,8 @@ function save(dane, arkusz) {
  * the sheet would otherwise swallow the participant's own.
  */
 function plainText(value) {
-  const s = String(value)
+  let s = String(value)
+  if (s.length > MAX_CELL_LENGTH) s = s.slice(0, MAX_CELL_LENGTH) + ' […]'
   const risky = /^\s*[=+\-@']/.test(s)
   const plainNumber = /^\s*[+-]?\d+([.,]\d+)?\s*$/.test(s)
   return risky && !plainNumber ? "'" + s : s
@@ -370,17 +398,29 @@ function getSpreadsheet() {
 
 /** Adds columns for questions the sheet doesn't know about yet. */
 function addColumns(arkusz, naglowki, noweId, etykiety) {
+  if (noweId.length === 0) return
   const start = naglowki.length + 1
-  noweId.forEach((id, i) => {
-    const kol = start + i
-    // The header text comes from the client too, so it gets the same
-    // treatment as an answer.
-    arkusz.getRange(1, kol).setValue(plainText(id)).setFontColor('#999999')
-    arkusz
-      .getRange(2, kol)
-      .setValue(plainText(etykiety[id] || id))
-      .setFontWeight('bold')
-  })
+  // Two writes for the whole batch, not two per column. This runs under
+  // the lock, and the first response on a fresh tab brings fifty new
+  // columns at once: cell by cell that was a hundred round trips to Google
+  // while everyone else waited for the lock.
+  //
+  // The grid is widened first where needed; a range reaching past the last
+  // column of the sheet is not something to rely on.
+  const brakMiejsca = start + noweId.length - 1 - arkusz.getMaxColumns()
+  if (brakMiejsca > 0) {
+    arkusz.insertColumnsAfter(arkusz.getMaxColumns(), brakMiejsca)
+  }
+  // The header text comes from the client too, so it gets the same
+  // treatment as an answer.
+  arkusz
+    .getRange(1, start, 1, noweId.length)
+    .setValues([noweId.map((id) => plainText(id))])
+    .setFontColor('#999999')
+  arkusz
+    .getRange(2, start, 1, noweId.length)
+    .setValues([noweId.map((id) => plainText(etykiety[id] || id))])
+    .setFontWeight('bold')
 }
 
 /**
@@ -434,8 +474,21 @@ function adminAction(akcja) {
     const plik = getSpreadsheet()
     const arkusz = getSheet()
     const wierszy = Math.max(arkusz.getLastRow() - 2, 0)
-    const ostatni =
-      wierszy > 0 ? String(arkusz.getRange(arkusz.getLastRow(), 1).getValue()) : ''
+    // The cell holds a date, and a date read back is rendered in the
+    // script's own time zone — nine hours off on a sheet created in another
+    // one. It is formatted in the SHEET's zone, which is what the cell shows.
+    let ostatni = ''
+    if (wierszy > 0) {
+      const w = arkusz.getRange(arkusz.getLastRow(), 1).getValue()
+      ostatni =
+        w instanceof Date
+          ? Utilities.formatDate(
+              w,
+              plik.getSpreadsheetTimeZone(),
+              'yyyy-MM-dd HH:mm:ss',
+            )
+          : String(w)
+    }
     return {
       ok: true,
       wersjaSkryptu: SCRIPT_VERSION,
@@ -494,10 +547,12 @@ function testSave() {
     sesja: 'test-' + new Date().getTime(),
     kto: 'TEST (do skasowania)',
     wersja: 'test',
-    odpowiedzi: { 'nps': 9, 'obecnosc-dni': 'Piątek; Sobota' },
+    // Keys of the real survey, so the test row lands in existing columns
+    // instead of founding stray ones that prepareColumns would have to clear.
+    odpowiedzi: { 'obecnosc-piatek': 'Tak', 'obecnosc-sobota': 'Tak' },
     etykiety: {
-      'nps': 'Na ile prawdopodobne, że polecisz Masterclass znajomemu?',
-      'obecnosc-dni': 'W których dniach uczestniczyłeś(-aś)?',
+      'obecnosc-piatek': SURVEY_COLUMNS[0][1],
+      'obecnosc-sobota': SURVEY_COLUMNS[1][1],
     },
     },
     getSheet(),

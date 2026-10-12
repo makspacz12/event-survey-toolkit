@@ -26,8 +26,17 @@ let nextFileId = 1
  */
 export function enterLikeSheets(value) {
   if (typeof value !== 'string') return value
+  // Sheets refuses the whole write, and with it the whole row.
+  if (value.length > 50000) {
+    throw new Error(
+      'Your input contains more than the maximum of 50000 characters in a single cell.',
+    )
+  }
   if (value.startsWith("'")) return value.slice(1)
-  if (value.startsWith('=')) return { formula: value }
+  // "=" always starts a formula; "+" and "-" do too, unless what follows is
+  // just a number ("+1" and "-5" are the numbers 1 and -5).
+  const number = /^[+-]?\d+([.,]\d+)?$/.test(value.trim())
+  if (/^\s*[=+-]/.test(value) && !number) return { formula: value }
   return value
 }
 
@@ -38,6 +47,9 @@ export function createSheet(name, parent) {
   const id = nextSheetId++ // every tab gets a fresh id, like in Sheets
   let frozen = 0
   const hidden = []
+  // A fresh tab has 26 columns; writes past the edge widen the grid, and so
+  // does an explicit insertColumnsAfter.
+  let maxColumns = 26
 
   const cell = (r, c) => {
     while (data.length < r) data.push([])
@@ -68,6 +80,11 @@ export function createSheet(name, parent) {
     deleteColumn: (n) => data.forEach((row) => row.splice(n - 1, 1)),
     getLastRow: () => data.length,
     getLastColumn: () => data.reduce((m, w) => Math.max(m, w.length), 0),
+    getMaxColumns: () => Math.max(maxColumns, sheet.getLastColumn()),
+    insertColumnsAfter: (after, count) => {
+      maxColumns = Math.max(maxColumns, after) + count
+      return sheet
+    },
     appendRow: (row) => data.push(row.map(enterLikeSheets)),
     setFrozenRows: (n) => {
       frozen = n
@@ -125,6 +142,7 @@ export function createFile() {
   const file = {
     tabs,
     getId: () => id,
+    getSpreadsheetTimeZone: () => 'Europe/Warsaw',
     getSheetByName: (n) => tabs.get(n) || null,
     getSheets: () => [...tabs.values()],
     insertSheet: (n) => {

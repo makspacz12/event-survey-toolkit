@@ -671,6 +671,43 @@ check('status wymienia obie zakładki', st2.zakladki.includes('Odpowiedzi') && s
 const arch2 = admin({ akcja: 'archiwizuj', adminToken: 'admin-test' })
 check('druga archiwizacja w tej samej minucie dostaje inną nazwę', arch2.ok === true && arch2.zarchiwizowano !== arch.zarchiwizowano, arch2.zarchiwizowano)
 
+/* 25–27. Hostile and oversized input on the freshly archived tab */
+console.log('\n25. Bardzo długi tekst nie wysadza wiersza')
+const tab25 = file22.tabs.get('Odpowiedzi')
+const rowsBefore25 = tab25.data.length
+const kolKom25 = tab25.data[0].indexOf('org-jedzenie::komentarz')
+const dlugi = 'x'.repeat(60000)
+const r25 = admin({ sesja: 'sesja-dlugi', kto: 'Długopis', wersja: 'x', odpowiedzi: { 'org-jedzenie': '8', 'org-jedzenie::komentarz': dlugi }, etykiety: {} })
+check('odpowiedź z komentarzem na 60 000 znaków przyjęta', r25.ok === true, JSON.stringify(r25).slice(0, 100))
+const row25 = tab25.data[tab25.data.length - 1]
+const kom25 = String(row25[kolKom25])
+check('komentarz przycięty do limitu komórki i oznaczony', kom25.length < 50000 && kom25.endsWith(' […]') && kom25.startsWith('xxx'), String(kom25.length))
+check('reszta wiersza nietknięta', tab25.data.length === rowsBefore25 + 1 && String(row25[tab25.data[0].indexOf('org-jedzenie')]) === '8')
+
+console.log('\n26. Identyfikatory jako tekst, sufit szerokości')
+const r26 = admin({ sesja: '=HYPERLINK("x")', kto: 'Hak', wersja: '+1+1', odpowiedzi: { 'org-jedzenie': '5' }, etykiety: {} })
+check('odpowiedź przyjęta', r26.ok === true, JSON.stringify(r26).slice(0, 100))
+const row26 = tab25.data[tab25.data.length - 1]
+check('identyfikator sesji od „=” zostaje tekstem', row26[1] === '=HYPERLINK("x")', JSON.stringify(row26[1]))
+check('wersja od „+” zostaje tekstem', row26[3] === '+1+1', JSON.stringify(row26[3]))
+const zaDuzo = {}
+for (let i = 0; i < 400; i++) zaDuzo['wymyslone-' + i] = 'x'
+const widthBefore26 = tab25.data[0].length
+const rows26 = tab25.data.length
+const r26b = admin({ sesja: 'sesja-szeroka', kto: 'Szerokopis', wersja: 'x', odpowiedzi: zaDuzo, etykiety: {} })
+check('400 wymyślonych pól odrzucone w całości', r26b.ok === false && /za-duzo-kolumn/.test(String(r26b.blad)), JSON.stringify(r26b).slice(0, 100))
+check('arkusz nie poszerzył się ani o kolumnę, ani o wiersz', tab25.data[0].length === widthBefore26 && tab25.data.length === rows26, `${widthBefore26}→${tab25.data[0].length}, ${rows26}→${tab25.data.length}`)
+
+console.log('\n27. Nowe pytanie w trakcie zbierania dostaje kolumnę z opisem')
+const widthBefore27 = tab25.data[0].length
+const r27 = admin({ sesja: 'sesja-nowe', kto: 'Nowak', wersja: 'x', odpowiedzi: { 'org-jedzenie': '6', 'nowe-pytanie': 'tak', 'nowe-pytanie::komentarz': '-uwaga' }, etykiety: { 'nowe-pytanie': '=Nowe pytanie?', 'nowe-pytanie::komentarz': 'Nowe pytanie? [komentarz]' } })
+check('odpowiedź przyjęta', r27.ok === true, JSON.stringify(r27).slice(0, 100))
+check('dwie nowe kolumny na końcu, w kolejności z odpowiedzi', tab25.data[0].slice(widthBefore27).join('|') === 'nowe-pytanie|nowe-pytanie::komentarz', tab25.data[0].slice(widthBefore27).join('|'))
+check('opisy nowych kolumn zapisane jako tekst, nawet od „=”', tab25.data[1][widthBefore27] === '=Nowe pytanie?' && tab25.data[1][widthBefore27 + 1] === 'Nowe pytanie? [komentarz]', JSON.stringify(tab25.data[1].slice(widthBefore27)))
+const row27 = tab25.data[tab25.data.length - 1]
+check('wartość od „-” w nowej kolumnie zostaje tekstem', row27[widthBefore27 + 1] === '-uwaga', JSON.stringify(row27[widthBefore27 + 1]))
+check('siatka arkusza poszerzona na nowe kolumny', tab25.getMaxColumns() >= tab25.data[0].length, `${tab25.getMaxColumns()} vs ${tab25.data[0].length}`)
+
 /* ------------------------------------------------------------- summary --- */
 
 console.log(`\n=== Wynik: ${passed} zdanych, ${failed} oblanych ===\n`)

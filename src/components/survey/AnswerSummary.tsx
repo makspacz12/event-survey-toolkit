@@ -79,7 +79,7 @@ export function AnswerSummary({
                   <dt className="text-[12.5px] leading-snug text-[#8A7A55]">
                     {pytanie.tresc}
                   </dt>
-                  <dd className="mt-0.5 text-[14.5px] leading-snug text-[#3B3121]">
+                  <dd className="mt-0.5 whitespace-pre-line text-[14.5px] leading-snug text-[#3B3121]">
                     {tekst}
                   </dd>
                 </div>

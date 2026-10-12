@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import LandingPage from '@/components/LandingPage'
+import { loadState } from '@/lib/storage'
 import { PhoneFrame } from '@/components/PhoneFrame'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
@@ -41,6 +42,19 @@ export default function App() {
     const onHash = () => setRoute(getRoute())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  /**
+   * A survey finished on an earlier visit but never confirmed as sent (no
+   * signal at the time) goes straight back to its final screen, where the
+   * send is repeated and confirmed. Left on the start page, the person would
+   * see "Rozpocznij" — and either start over or walk away with the answers
+   * still sitting on the phone.
+   */
+  useEffect(() => {
+    if (getRoute() === 'ankieta') return
+    const s = loadState()
+    if (s.ukonczona && s.intro.przedstawienie) window.location.hash = '/ankieta'
   }, [])
 
   /**

@@ -34,6 +34,7 @@
  *
  * Options: --base URL  --mock URL  --users N  --concurrency N  --seed N
  *          --headful   --light-ratio 0.9   --out plik.json  --label TEKST
+ *          --fail-next N  --fail-mode html|drop|written-drop  --no-manual-retry
  */
 
 import { chromium } from 'playwright'
@@ -71,6 +72,15 @@ const VERSION = '2026-10-12'
 const FAIL_NEXT = Number(args['fail-next'] ?? 0)
 /** With --no-manual-retry nobody taps "Spróbuj teraz": the app has to recover by itself. */
 const MANUAL_RETRY = args['no-manual-retry'] !== 'true'
+/**
+ * How the mock fails those submissions: `html` answers with Google's error
+ * page, `drop` cuts the connection, `written-drop` WRITES the row and then
+ * cuts the connection — a slow write the browser gave up on. The last one
+ * must end with two rows, the first marked as superseded.
+ */
+const FAIL_MODE = args['fail-mode'] ?? 'html'
+/** Cut connections are the point of the drop modes, not a defect of the page. */
+const DROPS_INJECTED = FAIL_NEXT > 0 && FAIL_MODE !== 'html'
 /**
  * Browser identity. Headless Chromium announces itself as "HeadlessChrome",
  * and a hundred of those from one address in two seconds is exactly what a
@@ -209,6 +219,13 @@ function makePersona(nr, rnd) {
     // finishes again: the sheet must show ONE person who changed their mind.
     fixAfterSend: Boolean(FIX_TEXT) && chance(0.1),
   }
+  // Finishing with no signal, in two flavours. Either the person waits with
+  // the page open and the app's own retry gets the answers through once the
+  // connection is back — or they tap "Spróbuj teraz" (still nothing), close
+  // the page and open the survey again later. Both must end with ONE row.
+  const offline = chance(0.18) ? (chance(0.5) ? 'finish' : 'close') : null
+  quirks.offlineFinish = offline === 'finish'
+  quirks.offlineClose = offline === 'close' && !quirks.fixAfterSend
 
   return { nr, marker, name, attendance, plans, quirks }
 }
@@ -415,6 +432,8 @@ async function runPersona(p, browser) {
   const started = Date.now()
   const checks = []
   const errors = []
+  /** Known third-party noise, reported but not counted against the persona. */
+  const warnings = []
   let retries = 0
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -424,14 +443,32 @@ async function runPersona(p, browser) {
     locale: 'pl-PL',
     ...(USER_AGENT ? { userAgent: USER_AGENT } : {}),
   })
-  const page = await context.newPage()
-  page.setDefaultTimeout(30000)
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`console: ${m.text()}`)
-  })
-  // The console line for a failed request has no address in it; this one does.
-  page.on('requestfailed', (r) => errors.push(`request: ${r.failure()?.errorText ?? '?'} ${r.url().slice(0, 120)}`))
+  // While the persona is deliberately offline, failed requests are the point,
+  // not a defect.
+  let offlineNow = false
+  const attach = (pg) => {
+    pg.setDefaultTimeout(30000)
+    pg.on('pageerror', (e) => {
+      // The 3D robot's loader throws when the page leaves before the scene
+      // has arrived (a race inside the Spline runtime). The robot is gone by
+      // then and the survey, in its own route, is not affected.
+      if (/reading 'scene'/.test(e.message)) return warnings.push(`spline: ${e.message}`)
+      errors.push(`pageerror: ${e.message}`)
+    })
+    pg.on('console', (m) => {
+      if (m.type() !== 'error' || offlineNow) return
+      if (DROPS_INJECTED && /Failed to load resource|ERR_EMPTY_RESPONSE|ERR_CONNECTION/.test(m.text())) return
+      errors.push(`console: ${m.text()}`)
+    })
+    // The console line for a failed request has no address in it; this one does.
+    pg.on('requestfailed', (r) => {
+      if (offlineNow) return
+      if (DROPS_INJECTED && r.url().includes('/exec')) return
+      errors.push(`request: ${r.failure()?.errorText ?? '?'} ${r.url().slice(0, 120)}`)
+    })
+  }
+  let page = await context.newPage()
+  attach(page)
 
   try {
     await page.goto(`${BASE}/${p.quirks.light ? '?lekki=1' : ''}`, { waitUntil: 'domcontentloaded' })
@@ -538,6 +575,10 @@ async function runPersona(p, browser) {
           checks.push(['podświetlona jest brakująca karta', (await page.locator(`#pytanie-${REQUIRED_TEXT.id}`).getAttribute('class'))?.includes('border-[#C9A14A]') ?? false, 'required'])
           await req.fill(p.plans[REQUIRED_TEXT.id].value)
         }
+        if (p.quirks.offlineFinish || p.quirks.offlineClose) {
+          offlineNow = true
+          await context.setOffline(true)
+        }
         await finish.click()
         heading = await waitForScreen(page, { is: THANKS })
         break
@@ -548,16 +589,25 @@ async function runPersona(p, browser) {
     checks.push(['odwiedzone sekcje to dokładnie te, które wynikają z obecności', JSON.stringify([...answered]) === JSON.stringify(expectedTitles) || (p.quirks.toggleFriday === 'off' && expectedTitles.every((t) => answered.has(t))), `${[...answered].join(' | ')} vs ${expectedTitles.join(' | ')}`])
 
     // --- thank-you screen ---
-    const sent = page.getByText('Wysłano do organizatora')
-    const retry = page.getByRole('button', { name: 'Spróbuj teraz' })
-    const errorNote = page.getByText('Zostaw tę stronę otwartą')
+    // Bound again when the page is reopened (see the offline quirks below).
+    let sent = page.getByText('Wysłano do organizatora')
+    let retry = page.getByRole('button', { name: 'Spróbuj teraz' })
+    let errorNote = page.getByText('Zostaw tę stronę otwartą')
+    const bindLocators = () => {
+      sent = page.getByText('Wysłano do organizatora')
+      retry = page.getByRole('button', { name: 'Spróbuj teraz' })
+      errorNote = page.getByText('Zostaw tę stronę otwartą')
+    }
     let sawError = false
+    /** The note shown when "Wysyłanie…" drags on (a slow server, say). */
+    let sawLongNote = false
     const waitForSent = async () => {
       const t0 = Date.now()
       const deadline = t0 + 240000
       while (Date.now() < deadline) {
         if ((await sent.count()) > 0) return Date.now() - t0
         if ((await errorNote.count()) > 0) sawError = true
+        if ((await page.getByText('Trwa to dłużej niż zwykle').count()) > 0) sawLongNote = true
         if (MANUAL_RETRY && (await retry.count()) > 0) {
           retries++
           await retry.click()
@@ -568,11 +618,46 @@ async function runPersona(p, browser) {
       }
       return -1
     }
+    if (p.quirks.offlineFinish || p.quirks.offlineClose) {
+      // No signal: the honest message must show and nothing may be lost.
+      const shown = await errorNote.waitFor({ timeout: 30000 }).then(() => true).catch(() => false)
+      checks.push(['bez zasięgu: uczciwy komunikat zamiast udawanego sukcesu', shown, 'offline'])
+      const queued = () => page.evaluate(() => JSON.parse(localStorage.getItem('ctn-kolejka-wysylki-v1') || '[]').length)
+      checks.push(['bez zasięgu: odpowiedzi czekają w kolejce, jedna kopia', (await queued()) === 1, String(await queued())])
+      if (p.quirks.offlineClose) {
+        // "Spróbuj teraz" with still no signal must not add a second copy.
+        await retry.click()
+        await sleep(4000)
+        checks.push(['„Spróbuj teraz” bez zasięgu nie dokłada drugiej kopii', (await queued()) === 1, String(await queued())])
+        // The page is closed and the survey opened again — with signal. The
+        // app must remember the survey was finished, send the queued answers
+        // by itself and say so; the sheet must hold ONE row.
+        await page.close()
+        offlineNow = false
+        await context.setOffline(false)
+        page = await context.newPage()
+        attach(page)
+        bindLocators()
+        await page.goto(`${BASE}/${p.quirks.light ? '?lekki=1' : ''}`, { waitUntil: 'domcontentloaded' })
+        const screen = await waitForScreen(page, { is: THANKS }).catch((e) => `inny ekran: ${String(e.message).split('\n')[0]}`)
+        checks.push(['po powrocie z zasięgiem od razu ekran końcowy, nie ostatnia sekcja', screen === THANKS, String(screen)])
+      } else {
+        offlineNow = false
+        await context.setOffline(false)
+      }
+    }
     const sentAfter = await waitForSent()
     checks.push(['potwierdzenie „Wysłano do organizatora”', sentAfter >= 0, retries ? `${retries} ponowień` : `${(sentAfter / 1000).toFixed(1)} s`])
-    if (FAIL_NEXT > 0 && !MANUAL_RETRY) {
-      checks.push(['po nieudanej wysyłce pokazuje się uczciwy komunikat (zostaw stronę otwartą)', sawError, ''])
-      checks.push(['aplikacja sama ponawia wysyłkę bez dotykania ekranu', sentAfter >= 0 && retries === 0, `${(sentAfter / 1000).toFixed(1)} s`])
+    // A write that took longer than 16 s showed "Wysyłanie…" long enough for
+    // the reassurance to be due (it appears after 15 s).
+    if (sentAfter > 16500 && !sawError) {
+      checks.push(['długie wysyłanie: pojawia się notka, że można zostawić lub zamknąć stronę', sawLongNote, `${(sentAfter / 1000).toFixed(1)} s`])
+    }
+    // Only the submissions the mock actually failed show the message; which
+    // personas those are depends on timing. Each that saw it must have got
+    // through by the app's own retry, with nobody tapping anything.
+    if (FAIL_NEXT > 0 && !MANUAL_RETRY && sawError) {
+      checks.push(['po nieudanej wysyłce: uczciwy komunikat, potem wysyłka sama dochodzi', sentAfter >= 0 && retries === 0, `${(sentAfter / 1000).toFixed(1)} s`])
     }
     const cleared = await page
       .waitForFunction(() => !localStorage.getItem('ctn-ankieta-mlodzi-v1') && !localStorage.getItem('ctn-kolejka-wysylki-v1'), null, { timeout: 10000 })
@@ -598,7 +683,7 @@ async function runPersona(p, browser) {
 
     checks.push(['konsola przeglądarki bez błędów', errors.length === 0, errors.slice(0, 3).join(' | ')])
 
-    return { nr: p.nr, ok: checks.every((c) => c[1]), checks, errors, retries, ms: Date.now() - started }
+    return { nr: p.nr, ok: checks.every((c) => c[1]), checks, errors, warnings, retries, sawError, ms: Date.now() - started }
   } catch (err) {
     let shot = null
     try {
@@ -607,7 +692,7 @@ async function runPersona(p, browser) {
     } catch {
       shot = null
     }
-    return { nr: p.nr, ok: false, checks, errors: [...errors, `fatal: ${err.message.split('\n')[0]}${shot ? ` (zrzut: ${shot})` : ''}`], retries, ms: Date.now() - started }
+    return { nr: p.nr, ok: false, checks, errors: [...errors, `fatal: ${err.message.split('\n')[0]}${shot ? ` (zrzut: ${shot})` : ''}`], warnings, retries, ms: Date.now() - started }
   } finally {
     await context.close().catch(() => {})
   }
@@ -630,14 +715,21 @@ async function verifyAgainstMock(personas) {
     }
     const diffs = []
     const wantRows = p.quirks.fixAfterSend ? 2 : 1
-    if (rows.length !== wantRows) diffs.push({ key: '(wiersze)', want: wantRows, got: rows.length })
-    if (p.quirks.fixAfterSend && rows.length === 2) {
-      // One person, two rows: the first superseded, the second clean.
+    // With `--fail-mode written-drop` a write may succeed without the browser
+    // hearing about it; every retry then makes one more identical row and
+    // the script must mark all but the newest. Any number of rows is fine
+    // then — if marked right.
+    const retriedAfterWrite = FAIL_MODE === 'written-drop' && rows.length > wantRows
+    if (rows.length !== wantRows && !retriedAfterWrite) diffs.push({ key: '(wiersze)', want: wantRows, got: rows.length })
+    if (rows.length > 1) {
+      // One person, several rows: all superseded but the newest, which is clean.
       const kto = col('Kto wypełnił')
-      const first = String(rows[0][kto] ?? '')
-      const second = String(rows[1][kto] ?? '')
-      if (!first.startsWith('[nieaktualne] ')) diffs.push({ key: '(pierwszy wiersz)', want: '[nieaktualne] …', got: first })
-      if (second.startsWith('[nieaktualne]')) diffs.push({ key: '(drugi wiersz)', want: 'bez dopisku', got: second })
+      rows.forEach((r, i) => {
+        const v = String(r[kto] ?? '')
+        const marked = v.startsWith('[nieaktualne] ')
+        if (i < rows.length - 1 && !marked) diffs.push({ key: `(wiersz ${i + 1})`, want: '[nieaktualne] …', got: v })
+        if (i === rows.length - 1 && marked) diffs.push({ key: '(ostatni wiersz)', want: 'bez dopisku', got: v })
+      })
     }
     const row = rows[rows.length - 1]
     for (const [key, want] of Object.entries(expected)) {
@@ -681,7 +773,7 @@ if (TARGET === 'mock') {
     console.error(`Mock-serwer nie odpowiada pod ${MOCK}. Uruchom: node scripts/mock-sheet-server.mjs`)
     process.exit(2)
   }
-  await fetch(`${MOCK}/control?failNext=${FAIL_NEXT}&mode=html`)
+  await fetch(`${MOCK}/control?failNext=${FAIL_NEXT}&mode=${FAIL_MODE}`)
 }
 
 const browser = await chromium.launch({ headless: !HEADFUL })
@@ -695,9 +787,10 @@ async function worker() {
     results.push(r)
     const failed = r.checks.filter((c) => !c[1])
     console.log(
-      `${r.ok ? 'OK  ' : 'BŁĄD'} ${p.marker} ${(r.ms / 1000).toFixed(1).padStart(5)}s  ${p.attendance.join('/')} ${p.name ? 'imię  ' : 'anonim'}${p.quirks.light ? '   ' : ' 3D'}` +
+      `${r.ok ? 'OK  ' : 'BŁĄD'} ${p.marker} ${(r.ms / 1000).toFixed(1).padStart(5)}s  ${p.attendance.join('/')} ${p.name ? 'imię  ' : 'anonim'}${p.quirks.light ? '   ' : ' 3D'}${p.quirks.offlineFinish ? ' offline' : p.quirks.offlineClose ? ' offline+powrót' : ''}` +
         (failed.length ? `  ← ${failed.map((c) => `${c[0]} [${c[2]}]`).join('; ')}` : '') +
-        (r.errors.length ? `  ! ${r.errors[0].slice(0, 160)}` : ''),
+        (r.errors.length ? `  ! ${r.errors[0].slice(0, 160)}` : '') +
+        (r.warnings?.length ? `  ~ ${r.warnings[0].slice(0, 100)}` : ''),
     )
   }
 }

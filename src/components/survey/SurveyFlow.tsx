@@ -20,6 +20,7 @@ import {
   submitConfigured,
   forgetSession,
   type SubmitStatus,
+  pendingForThisDevice,
 } from '@/lib/submit'
 import { cn } from '@/lib/utils'
 import {
@@ -127,15 +128,19 @@ function AnswerField({
           value={komentarz}
           onChange={(e) => onKomentarz(e.target.value)}
           rows={2}
+          maxLength={5000}
           placeholder={
             odmowa ? 'Powiedz nam, co moglibyśmy zrobić lepiej' : 'Twój komentarz…'
           }
-          className="mt-3 w-full resize-none rounded-md border border-dashed border-[#3B3121]/25 bg-[#FDFBF7] p-3 text-[14px] leading-relaxed text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
+          className="mt-3 w-full resize-none rounded-md border border-dashed border-[#3B3121]/25 bg-[#FDFBF7] p-3 text-[16px] leading-relaxed text-ink placeholder:text-[#A99A78] focus:border-[#C9A14A] focus:outline-none focus:ring-2 focus:ring-[#C9A14A]/15"
         />
       )}
     </>
   )
 }
+
+/** Pauses between automatic retries on the final screen, in ms (see below). */
+const ODSTEPY_PONOWIEN = [4000, 10000, 20000, 40000, 90000]
 
 export default function SurveyFlow() {
   // State loaded from cache — the user returns to where they left off
@@ -144,12 +149,20 @@ export default function SurveyFlow() {
   const [krok, setKrok] = useState<Step>(() => {
     const s = loadState()
     if (!s.intro.przedstawienie) return { rodzaj: 'intro' }
+    // A survey finished but never confirmed as sent (no signal at the time,
+    // page closed) comes back to the final screen, where the send is
+    // repeated. It used to come back to the last section: the person saw
+    // "Zakończ ankietę" again, the queue meanwhile sent the answers on its
+    // own, and the second tap on the button made a second row.
+    if (s.ukonczona) return { rodzaj: 'koniec' }
     return { rodzaj: 'sekcja', index: s.biezacaSekcja }
   })
   const [blad, setBlad] = useState<string | null>(null)
-  const [status, setStatus] = useState<SubmitStatus>(
-    submitConfigured ? 'gotowe' : 'brak-konfiguracji',
-  )
+  const [status, setStatus] = useState<SubmitStatus>(() => {
+    if (!submitConfigured) return 'brak-konfiguracji'
+    // Opening straight on the final screen means a send is about to start.
+    return krok.rodzaj === 'koniec' ? 'wysylanie' : 'gotowe'
+  })
 
   /**
    * A brand-new survey on this device gets a fresh session identifier.
@@ -174,7 +187,20 @@ export default function SurveyFlow() {
   useEffect(() => {
     if (!submitConfigured) return
     const sprobuj = () => {
-      if (queueLength() > 0) void drainQueue()
+      if (queueLength() === 0) return
+      void drainQueue().then((sent) => {
+        // The drain may have just confirmed THIS survey's answers while the
+        // final screen was still showing the failure (the phone found its
+        // signal again, say). Say so — which also stops the automatic
+        // retries, which would otherwise send the same answers once more.
+        if (
+          sent > 0 &&
+          krokRef.current.rodzaj === 'koniec' &&
+          !pendingForThisDevice()
+        ) {
+          setStatus('wyslano')
+        }
+      })
     }
     sprobuj()
     window.addEventListener('online', sprobuj)
@@ -233,14 +259,20 @@ export default function SurveyFlow() {
       if (zapisZablokowany.current) return
       saveState(stanRef.current)
     }
+    // Only when the page goes INTO the background — that is the moment the
+    // state could be lost. Coming back is a visibility change too, with
+    // nothing new to save.
+    const naUkrycie = () => {
+      if (document.visibilityState === 'hidden') zapiszTeraz()
+    }
     // `pagehide` also catches tab close on iOS, where `beforeunload` is
     // sometimes skipped.
     window.addEventListener('pagehide', zapiszTeraz)
-    document.addEventListener('visibilitychange', zapiszTeraz)
+    document.addEventListener('visibilitychange', naUkrycie)
     return () => {
       zapiszTeraz()
       window.removeEventListener('pagehide', zapiszTeraz)
-      document.removeEventListener('visibilitychange', zapiszTeraz)
+      document.removeEventListener('visibilitychange', naUkrycie)
     }
   }, [])
 
@@ -386,6 +418,10 @@ export default function SurveyFlow() {
       let cel: Step | null = null
       if (biezacy.rodzaj === 'koniec') {
         cel = { rodzaj: 'sekcja', index: ostatniaSekcja }
+        // Back from here means "I want to change something": the survey is
+        // open again, and a page reopened later must show the section being
+        // edited, not the final screen sending half-edited answers.
+        setStan((s) => ({ ...s, ukonczona: false }))
       } else if (biezacy.rodzaj === 'sekcja') {
         // Clamp to range: the section list may have shrunk if someone went
         // back to "Attendance" and unchecked a day. Without this, the render
@@ -453,8 +489,12 @@ export default function SurveyFlow() {
    */
   const dalej = () => {
     if (krok.rodzaj !== 'sekcja') return
+    // The section list can shrink under our feet; the clamping effect
+    // catches up a moment later, and until then there is nothing to check.
+    const sekcja = sekcje[krok.index]
+    if (!sekcja) return
 
-    const brak = missingAnswers(sekcje[krok.index])
+    const brak = missingAnswers(sekcja)
     if (brak.length > 0) {
       setBlad(`Uzupełnij jeszcze: „${brak[0].tresc}”`)
       setBrakujacePytanie(brak[0].id)
@@ -524,6 +564,33 @@ export default function SurveyFlow() {
   }
 
   /**
+   * Opened straight on the final screen (see the initial step): the answers
+   * were finished on an earlier visit but never confirmed, so the send is
+   * repeated now. The queue drain at start reaches for the same answers; the
+   * two share one request (see `submitAnswers`).
+   */
+  useEffect(() => {
+    if (krok.rodzaj === 'koniec') void wyslij()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /**
+   * "Wysyłanie…" that drags on gets a line of reassurance. A write can take
+   * a while when everyone submits at once — the server queues them — and a
+   * person watching a spinner for twenty seconds starts wondering whether to
+   * close the page. They may: the answers are kept and sent on the next visit.
+   */
+  const [dlugoWysyla, setDlugoWysyla] = useState(false)
+  useEffect(() => {
+    if (status !== 'wysylanie') {
+      setDlugoWysyla(false)
+      return
+    }
+    const id = window.setTimeout(() => setDlugoWysyla(true), 15000)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  /**
    * CLEANING UP STORAGE AFTER A CONFIRMED SEND
    * ============================================
    * Once the answers are safely in the spreadsheet, there's no reason for them
@@ -562,7 +629,9 @@ export default function SurveyFlow() {
    * AUTOMATIC RETRIES ON THE FINAL SCREEN
    * =====================================
    * While this screen stays open after a failed send, the app keeps trying
-   * on its own at growing intervals: 15 s, 30 s, 60 s, then every 2 min.
+   * on its own at growing intervals: about 4 s, 10 s, 20 s, 40 s, then every
+   * 90 s, each with up to two seconds of random slack so that a roomful of
+   * phones that failed together does not retry in the same instant.
    * The rush that causes such failures — everyone submitting in the same
    * minute — passes quickly, so a participant who simply leaves the page
    * open gets their answers through without touching anything. "Spróbuj
@@ -573,7 +642,9 @@ export default function SurveyFlow() {
   useEffect(() => {
     if (status === 'wyslano') ponowienia.current = 0
     if (krok.rodzaj !== 'koniec' || status !== 'blad') return
-    const odstep = Math.min(15000 * 2 ** ponowienia.current, 120000)
+    const odstep =
+      ODSTEPY_PONOWIEN[Math.min(ponowienia.current, ODSTEPY_PONOWIEN.length - 1)] +
+      Math.random() * 2000
     const id = window.setTimeout(() => {
       ponowienia.current += 1
       void wyslij()
@@ -695,6 +766,7 @@ export default function SurveyFlow() {
                     <Fragment key={opcja.klucz}>
                     <button
                       type="button"
+                      aria-pressed={aktywna}
                       onClick={() =>
                         setStan((s) => ({
                           ...s,
@@ -734,6 +806,7 @@ export default function SurveyFlow() {
                             type="text"
                             autoFocus
                             autoComplete="name"
+                            maxLength={120}
                             value={stan.intro.imieNazwisko}
                             onChange={(e) =>
                               setStan((s) => ({
@@ -787,6 +860,7 @@ export default function SurveyFlow() {
 
               {blad && (
                 <motion.p
+                  role="alert"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mt-5 rounded-md border border-[#C9A14A]/40 bg-[#FBF3DF] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#8A6A1E]"
@@ -879,6 +953,7 @@ export default function SurveyFlow() {
 
               {blad && (
                 <motion.p
+                  role="alert"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mt-4 rounded-md border border-[#C9A14A]/40 bg-[#FBF3DF] px-3.5 py-2.5 text-[13px] leading-snug text-[#8A6A1E]"
@@ -929,11 +1004,22 @@ export default function SurveyFlow() {
                     the build without a connected spreadsheet the screen stays
                     unchanged. */}
                 {submitConfigured && (
-                  <div className="mt-4 min-h-[24px]">
+                  <div className="mt-4 min-h-[24px]" role="status">
                     {status === 'wysylanie' && (
-                      <span className="font-spacemono text-[11px] uppercase tracking-[0.16em] text-[#9C8345]">
-                        Wysyłanie…
-                      </span>
+                      <div>
+                        <span className="font-spacemono text-[11px] uppercase tracking-[0.16em] text-[#9C8345]">
+                          Wysyłanie…
+                        </span>
+                        {dlugoWysyla && (
+                          <p className="mt-2 text-[12.5px] leading-relaxed text-[#8A6A1E]">
+                            Trwa to dłużej niż zwykle — wiele osób wysyła
+                            odpowiedzi w tej samej chwili. Możesz zostawić tę
+                            stronę otwartą albo ją zamknąć: odpowiedzi są
+                            bezpieczne na tym urządzeniu i wyślemy je, gdy
+                            następnym razem otworzysz ankietę.
+                          </p>
+                        )}
+                      </div>
                     )}
                     {status === 'wyslano' && (
                       <span className="inline-flex items-center gap-1.5 font-spacemono text-[11px] uppercase tracking-[0.16em] text-[#7A8C5A]">
@@ -990,7 +1076,9 @@ export default function SurveyFlow() {
                     scrollToQuestion(brak[0].id)
                     return
                   }
-                  idzDo(stan.biezacaSekcja)
+                  // The remembered section may lie beyond the list when the
+                  // attendance answers changed on this very screen.
+                  idzDo(Math.max(0, Math.min(stan.biezacaSekcja, sekcje.length - 1)))
                 }}
                 // NOTE: `disabled:bg-[#XXXXXX]/12` (arbitrary hex + alpha) isn't
                 // generated by Tailwind 3 — the disabled state needs a full,

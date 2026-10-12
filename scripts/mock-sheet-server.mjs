@@ -18,7 +18,7 @@
  *   POST /exec                    the endpoint the app calls
  *   GET  /rows                    the sheet as JSON: headers, labels, rows
  *   GET  /reset                   a fresh, empty spreadsheet
- *   GET  /control?delay=250&jitter=250&failNext=3&mode=html|drop
+ *   GET  /control?delay=250&jitter=250&failNext=3&mode=html|drop|written-drop
  *                                 shape the next responses (see below)
  *
  * Response shaping, for rehearsing bad days:
@@ -26,6 +26,8 @@
  *   failNext=N     the next N submissions fail; `mode` picks how:
  *                  html  → 200 with an HTML error page, like Google's own
  *                  drop  → the connection is cut with no response at all
+ *                  written-drop → the row IS written, then the connection is
+ *                  cut: a slow write the browser stopped waiting for
  *
  * Run:  node scripts/mock-sheet-server.mjs            (port 8787)
  *       MOCK_PORT=9000 node scripts/mock-sheet-server.mjs
@@ -121,6 +123,16 @@ const server = http.createServer(async (req, res) => {
       shape.failNext--
       stats.failed++
       if (shape.mode === 'drop') return req.socket.destroy()
+      if (shape.mode === 'written-drop') {
+        const run = chain.then(async () => {
+          await sleep(shape.delay + Math.random() * shape.jitter)
+          return script.doPost({ postData: { contents: body } })
+        })
+        chain = run.catch(() => {})
+        const out = await run
+        if (JSON.parse(out.tresc).ok) stats.written++
+        return req.socket.destroy()
+      }
       return send(
         res,
         200,

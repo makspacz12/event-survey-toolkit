@@ -17,9 +17,10 @@ import { visibleQuestionIds } from '@/lib/visibility'
  * endpoint. If it leaked, the worst a stranger could do is append fake
  * rows. They couldn't read anyone else's answers or delete anything.
  *
- * Sending is RESILIENT TO NO NETWORK: a failed attempt lands in an
- * in-memory queue on the phone and is retried the next time the page opens
- * and whenever the browser reports the connection is back.
+ * Sending is RESILIENT TO NO NETWORK: the answers sit in a queue on the
+ * phone from the moment the send starts until the server confirms it, and
+ * whatever is left there is retried the next time the survey opens and
+ * whenever the browser reports the connection is back.
  */
 
 const SURVEY = ankietaJson as Survey
@@ -165,15 +166,22 @@ function buildPayload(state: SurveyState) {
   }
 }
 
-/** Saves the payload to the queue (when submission failed). */
+/**
+ * Saves the payload to the queue. ONE ENTRY PER PERSON: an entry already
+ * waiting under the same key is replaced by the newer answers, not joined by
+ * them. Before this, every "Spróbuj teraz" tapped without signal added one
+ * more copy of the same answers, and when the connection came back each copy
+ * became a row in the sheet — seen on the live site as three rows for one
+ * participant.
+ */
 function enqueue(payload: unknown) {
   try {
-    const raw = localStorage.getItem(QUEUE_KEY)
-    const queue: unknown[] = raw ? JSON.parse(raw) : []
+    const key = payloadKey(payload)
+    const queue = readQueue().filter((d) => payloadKey(d) !== key)
     queue.push(payload)
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+    writeQueue(queue)
   } catch {
-    // out of storage space — fine, the user still has the file download
+    // out of storage space — fine, the answers are still on screen
   }
 }
 
@@ -217,14 +225,33 @@ function writeQueue(queue: unknown[]) {
  * answers were silently lost this way. Now a failed write is visible: it
  * lands in the queue and gets retried.
  */
+/**
+ * How long one attempt may take before it counts as failed. A phone that
+ * drops off the network mid-request can otherwise hang on "Wysyłanie…" for
+ * as long as the browser cares to wait — minutes, with no retry and no
+ * message. The server itself waits up to 120 s for its turn to write, so
+ * most slow-but-successful writes still make it under this limit; one that
+ * does not gets retried, and the sheet marks the older copy as superseded.
+ */
+const ATTEMPT_TIMEOUT = 90000
+
 async function submitOnce(payload: unknown): Promise<boolean> {
   if (!URL) return false
+  // AbortController rather than AbortSignal.timeout(): the latter is missing
+  // on phones a few years old, and a missing function here would make EVERY
+  // send fail — straight into the queue, for good.
+  const controller =
+    typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller
+    ? setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT)
+    : null
   try {
     const res = await fetch(URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       redirect: 'follow',
+      ...(controller ? { signal: controller.signal } : {}),
     })
     const text = await res.text()
     try {
@@ -236,50 +263,91 @@ async function submitOnce(payload: unknown): Promise<boolean> {
       return false
     }
   } catch {
-    // Usually no connection. The payload goes into the queue and we'll try
-    // again once the network is back.
+    // Usually no connection, or the attempt ran out of time. The payload is
+    // already in the queue and will be tried again.
     return false
+  } finally {
+    if (timer !== null) clearTimeout(timer)
   }
 }
 
-/** Identifies a payload in the queue, so the right entry can be removed. */
+/** Identifies a person's answers in the queue (one entry per person, see `enqueue`). */
 function payloadKey(payload: unknown): string {
   const d = payload as { sesja?: string; wersja?: string }
   return `${d?.sesja ?? ''}|${d?.wersja ?? ''}`
 }
 
 /**
- * Sends the answers. If it fails, they land in the queue and are retried
- * later. Returns `true` on success.
+ * Sends the answers. Returns `true` once the server has confirmed the write.
  *
- * After a successful send, we remove earlier attempts from the same session
- * from the queue. Without this, a manual "Try again" would leave an old
- * copy in the queue, which would go out on the next page load and create a
- * second, poorer row for the same person in the sheet.
+ * WRITE-AHEAD: the answers go into the queue BEFORE the request leaves, and
+ * the confirmation takes them out. The queue used to be written only after
+ * a failure — but a page closed while "Wysyłanie…" was showing fails
+ * nothing, it simply vanishes, and with it the answers. Now whatever is not
+ * confirmed is still on the phone for the next visit to send.
  */
 export async function submitAnswers(state: SurveyState): Promise<boolean> {
   if (!submitConfigured) return false
   const payload = buildPayload(state)
-
-  let ok = await submitOnce(payload)
-  if (!ok) {
-    // One retry after a short delay. The most common failure cause is a
-    // rush in the first minutes after the survey link goes out — a second
-    // attempt then hits a less crowded queue. We wait long enough not to
-    // add to the peak, but short enough that the participant is still
-    // looking at the screen.
-    await new Promise((r) => setTimeout(r, 2500))
-    ok = await submitOnce(payload)
-  }
-
-  if (ok) removeFromQueue(payloadKey(payload))
-  else enqueue(payload)
-  return ok
+  enqueue(payload)
+  return sendWithRetry(payload)
 }
 
-function removeFromQueue(key: string) {
+/**
+ * Sends in progress, by person. Shared by `submitAnswers` and `drainQueue`,
+ * so the same answers never travel twice at once. At app start both the
+ * final screen (repeating its own send) and the queue drain reach for the
+ * same payload; without this each made its own request — two rows for one
+ * person. An IDENTICAL payload joins the request already running. A
+ * DIFFERENT one for the same person (they went back and changed an answer
+ * while the first send was still out) waits for it to finish, so the rows
+ * reach the sheet in the order they were made and the "superseded" mark
+ * lands on the older one, never on the newer.
+ */
+const inFlight = new Map<string, { body: string; promise: Promise<boolean> }>()
+
+async function sendWithRetry(payload: unknown): Promise<boolean> {
+  const key = payloadKey(payload)
+  const body = JSON.stringify(payload)
+  const running = inFlight.get(key)
+  if (running) {
+    if (running.body === body) return running.promise
+    await running.promise
+    return sendWithRetry(payload)
+  }
+
+  const promise = (async () => {
+    let ok = await submitOnce(payload)
+    if (!ok) {
+      // One retry after a short delay. The most common failure cause is a
+      // rush in the first minutes after the survey link goes out — a second
+      // attempt then hits a less crowded queue. We wait long enough not to
+      // add to the peak, but short enough that the participant is still
+      // looking at the screen.
+      await new Promise((r) => setTimeout(r, 2500))
+      ok = await submitOnce(payload)
+    }
+    if (ok) removeFromQueue(key, body)
+    return ok
+  })()
+  inFlight.set(key, { body, promise })
+  try {
+    return await promise
+  } finally {
+    if (inFlight.get(key)?.promise === promise) inFlight.delete(key)
+  }
+}
+
+/**
+ * Takes a confirmed payload out of the queue — and only that one. An entry
+ * under the same key with different contents is newer (the person changed an
+ * answer meanwhile) and still has to go.
+ */
+function removeFromQueue(key: string, body: string) {
   const queue = readQueue()
-  const remaining = queue.filter((d) => payloadKey(d) !== key)
+  const remaining = queue.filter(
+    (d) => payloadKey(d) !== key || JSON.stringify(d) !== body,
+  )
   if (remaining.length !== queue.length) writeQueue(remaining)
 }
 
@@ -291,33 +359,26 @@ function removeFromQueue(key: string) {
 let isDraining = false
 
 /**
- * Tries to send everything waiting in the queue. Called on app start and
- * when the connection comes back.
+ * Tries to send everything waiting in the queue. Called when the survey
+ * opens and when the connection comes back.
  *
- * IMPORTANT: we only remove entries from the queue that actually went
- * through — re-reading it right before writing. An earlier version
- * overwrote the queue with a list computed BEFORE the loop, so a survey
- * added mid-loop (a participant finishing up just as the network came back)
- * got wiped without being sent.
+ * Only a confirmed entry leaves the queue, and `sendWithRetry` removes
+ * exactly the entry it sent — so a survey finished while the drain was
+ * running (a participant tapping "Zakończ" just as the network came back)
+ * is neither wiped nor sent twice. Each entry is checked against the queue
+ * again right before its turn: the final screen's own send may have
+ * confirmed it in the meantime.
  */
 export async function drainQueue(): Promise<number> {
   if (!submitConfigured || isDraining) return 0
   isDraining = true
   try {
-    const toSend = readQueue()
-    if (toSend.length === 0) return 0
-
     let sent = 0
-    for (const payload of toSend) {
-      const ok = await submitOnce(payload)
-      if (!ok) continue
-      sent++
-      // Re-read: while waiting for the response, the queue may have grown
-      // with a freshly finished survey.
-      const current = readQueue()
-      writeQueue(
-        current.filter((d) => d !== payload && payloadKey(d) !== payloadKey(payload)),
-      )
+    for (const payload of readQueue()) {
+      const body = JSON.stringify(payload)
+      const stillWaiting = readQueue().some((d) => JSON.stringify(d) === body)
+      if (!stillWaiting) continue
+      if (await sendWithRetry(payload)) sent++
     }
     return sent
   } finally {
@@ -328,4 +389,16 @@ export async function drainQueue(): Promise<number> {
 /** How many payloads are waiting to be sent. */
 export function queueLength(): number {
   return readQueue().length
+}
+
+/**
+ * Whether THIS device's current answers are still waiting in the queue. The
+ * final screen asks after a queue drain: if nothing is left for this person,
+ * the drain confirmed their answers and the screen can say so — instead of
+ * keeping its failure message and sending the same answers once more on the
+ * next automatic retry.
+ */
+export function pendingForThisDevice(): boolean {
+  const key = `${sessionId()}|${VERSION}`
+  return readQueue().some((d) => payloadKey(d) === key)
 }

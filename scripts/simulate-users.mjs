@@ -71,6 +71,18 @@ const VERSION = '2026-10-12'
 const FAIL_NEXT = Number(args['fail-next'] ?? 0)
 /** With --no-manual-retry nobody taps "Spróbuj teraz": the app has to recover by itself. */
 const MANUAL_RETRY = args['no-manual-retry'] !== 'true'
+/**
+ * Browser identity. Headless Chromium announces itself as "HeadlessChrome",
+ * and a hundred of those from one address in two seconds is exactly what a
+ * hosting provider's bot mitigation is built to challenge (Vercel answered
+ * such a run with 403 for everyone). Against the public site the personas
+ * therefore present themselves as ordinary phones.
+ */
+const USER_AGENT =
+  args.ua ??
+  (TARGET === 'prod'
+    ? 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36'
+    : undefined)
 
 /* --------------------------------------------------------------- survey --- */
 
@@ -410,6 +422,7 @@ async function runPersona(p, browser) {
     isMobile: true,
     hasTouch: true,
     locale: 'pl-PL',
+    ...(USER_AGENT ? { userAgent: USER_AGENT } : {}),
   })
   const page = await context.newPage()
   page.setDefaultTimeout(30000)
@@ -417,6 +430,8 @@ async function runPersona(p, browser) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`)
   })
+  // The console line for a failed request has no address in it; this one does.
+  page.on('requestfailed', (r) => errors.push(`request: ${r.failure()?.errorText ?? '?'} ${r.url().slice(0, 120)}`))
 
   try {
     await page.goto(`${BASE}/${p.quirks.light ? '?lekki=1' : ''}`, { waitUntil: 'domcontentloaded' })

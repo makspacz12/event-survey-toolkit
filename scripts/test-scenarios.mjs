@@ -52,7 +52,9 @@ function isVisible(section, answers) {
   const c = section.pokaz_jesli
   if (!c) return true
   const value = answers[c.pytanie]
-  if (c.rowne != null) return value === c.rowne
+  // The strategies answer "Tak"/"Nie" as the sheet shows them; the survey's
+  // conditions are written in lower case. Same word either way.
+  if (c.rowne != null) return String(value).toLowerCase() === String(c.rowne).toLowerCase()
   if (c.zawiera != null)
     return typeof value === 'string' && value.includes(c.zawiera)
   return true
@@ -224,73 +226,73 @@ const empty = (p) => (p.wymagane ? String(p.max ?? 10) : '')
 
 /* ----------------------------------------------------- 25 scenarios --- */
 
-const DAY_FRI = 'Piątek (16.10)'
-const DAY_SAT = 'Sobota (17.10)'
-const BOTH_DAYS = `${DAY_FRI}; ${DAY_SAT}`
-const FINAL = 'Finał konkursu (Sala Konwersatorium)'
-const DEBATE3 = 'III debata o geopolityce (Sala Petrus)'
-const NOT_THERE = 'Nie było mnie wtedy'
+// Attendance, as the two opening questions of the survey ask it. These are
+// spread into each scenario's base answers; everything else the strategies
+// fill in for the sections those answers make visible.
+const DAY_FRI = { 'obecnosc-piatek': 'Tak', 'obecnosc-sobota': 'Nie' }
+const DAY_SAT = { 'obecnosc-piatek': 'Nie', 'obecnosc-sobota': 'Tak' }
+const BOTH_DAYS = { 'obecnosc-piatek': 'Tak', 'obecnosc-sobota': 'Tak' }
 
 const scenarios = [
   // --- branches ------------------------------------------------------
   { nr: 1, nazwa: 'Tylko piątek, anonimowo, minimum', sprawdza: 'sekcje sobotnie puste',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': DAY_FRI }, strategia: minimal },
+    kto: 'anonimowo', baza: { ...DAY_FRI }, strategia: minimal },
   { nr: 2, nazwa: 'Tylko sobota + finał, z imieniem', sprawdza: 'gałąź finału, piątek pusty',
-    kto: 'Anna Kowalska', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': FINAL }, strategia: realistic },
+    kto: 'Anna Kowalska', baza: { ...DAY_SAT }, strategia: realistic },
   { nr: 3, nazwa: 'Tylko sobota + III debata', sprawdza: 'gałąź geopolityczna',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': DEBATE3 }, strategia: realistic },
+    kto: 'anonimowo', baza: { ...DAY_SAT }, strategia: realistic },
   { nr: 4, nazwa: 'Oba dni + finał', sprawdza: 'najszersza ścieżka',
-    kto: 'Jan Nowak', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: realistic },
+    kto: 'Jan Nowak', baza: { ...BOTH_DAYS }, strategia: realistic },
   { nr: 5, nazwa: 'Oba dni + III debata', sprawdza: 'komplet, druga gałąź',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': DEBATE3 }, strategia: realistic },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: realistic },
   { nr: 6, nazwa: 'Oba dni, o 16:00 nieobecny', sprawdza: 'obie gałęzie 16:00 puste',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': NOT_THERE }, strategia: realistic },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: realistic },
   { nr: 7, nazwa: 'Tylko piątek, ale zaznaczony finał', sprawdza: 'sprzeczność logiczna: finał był w sobotę',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': DAY_FRI, 'sciezka-1600': FINAL }, strategia: realistic },
+    kto: 'anonimowo', baza: { ...DAY_FRI }, strategia: realistic },
   { nr: 8, nazwa: 'Oba dni, pytanie o 16:00 pominięte', sprawdza: 'brak odpowiedzi w pytaniu nieobowiązkowym',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS }, strategia: realistic },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: realistic },
 
   // --- extreme values ---------------------------------------------------
   { nr: 9, nazwa: 'Same najniższe oceny, NPS = 0', sprawdza: 'ZERO nie może zniknąć',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL, nps: '0' }, strategia: lowest },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: lowest },
   { nr: 10, nazwa: 'Same najwyższe, wszystkie opcje', sprawdza: 'wiele wartości w jednej komórce',
-    kto: 'Maria Wiśniewska', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL, nps: '10' }, strategia: highest },
+    kto: 'Maria Wiśniewska', baza: { ...BOTH_DAYS }, strategia: highest },
   { nr: 11, nazwa: 'Wszędzie „nie było mnie”', sprawdza: 'wartość specjalna zamiast liczby',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': NOT_THERE }, strategia: absent },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: absent },
   { nr: 12, nazwa: 'NPS = 1 przy wysokich ocenach', sprawdza: 'niespójna, ale możliwa odpowiedź',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL, nps: '1' }, strategia: highest },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: highest },
 
   // --- filling styles --------------------------------------------------
   { nr: 13, nazwa: 'Same oceny, zero wypowiedzi', sprawdza: 'puste kolumny tekstowe',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: noText },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: noText },
   { nr: 14, nazwa: 'Same wypowiedzi, oceny pominięte', sprawdza: 'puste kolumny liczbowe',
-    kto: 'Piotr Lewandowski', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': DEBATE3 }, strategia: textOnly },
+    kto: 'Piotr Lewandowski', baza: { ...BOTH_DAYS }, strategia: textOnly },
   { nr: 15, nazwa: 'Tylko wymagane, reszta pusta', sprawdza: 'ankieta wypełniona po łebkach',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: empty },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: empty },
   { nr: 16, nazwa: 'Jednoznakowe odpowiedzi', sprawdza: 'kropka jako cała wypowiedź',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': FINAL }, strategia: short },
+    kto: 'anonimowo', baza: { ...DAY_SAT }, strategia: short },
 
   // --- content dangerous for the sheet ------------------------------------
   { nr: 17, nazwa: 'Znaki specjalne i cudzysłowy', sprawdza: 'nowe linie, ĄĆĘŁŃÓŚŹŻ, =FORMUŁA()',
-    kto: 'O\'Brien "Tester"', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': DEBATE3 }, strategia: hard, dopisek: HARD_TEXT },
+    kto: 'O\'Brien "Tester"', baza: { ...DAY_SAT }, strategia: hard, dopisek: HARD_TEXT },
   { nr: 18, nazwa: 'Ciągi mylone z liczbami i datami', sprawdza: '0001, +48…, 2026-10-16, 1/2, =SUMA(), 1E5, #REF!',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: conversions, dopisek: AUTO_CONVERT },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: conversions, dopisek: AUTO_CONVERT },
   { nr: 19, nazwa: 'HTML i skrypt w treści', sprawdza: 'znaczniki mają zostać zwykłym tekstem',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': FINAL }, strategia: html, dopisek: HTML },
+    kto: 'anonimowo', baza: { ...DAY_SAT }, strategia: html, dopisek: HTML },
   { nr: 20, nazwa: 'Emoji w wypowiedziach', sprawdza: 'znaki spoza podstawowego zakresu',
-    kto: 'Zofia 🌟 Testowa', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': DEBATE3 }, strategia: emoji, dopisek: EMOJI },
+    kto: 'Zofia 🌟 Testowa', baza: { ...BOTH_DAYS }, strategia: emoji, dopisek: EMOJI },
   { nr: 21, nazwa: 'Bardzo długie wypowiedzi', sprawdza: 'około 3500 znaków w komórce',
-    kto: 'anonimowo', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: long },
+    kto: 'anonimowo', baza: { ...BOTH_DAYS }, strategia: long },
   { nr: 22, nazwa: 'Bardzo długie imię i nazwisko', sprawdza: 'przepełnienie kolumny „Kto wypełnił”',
-    kto: 'Katarzyna Maria Anna Kowalska-Nowakowska-Wiśniewska z Zakrzewa Wielkiego', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': FINAL }, strategia: realistic },
+    kto: 'Katarzyna Maria Anna Kowalska-Nowakowska-Wiśniewska z Zakrzewa Wielkiego', baza: { ...DAY_SAT }, strategia: realistic },
 
   // --- resubmissions by the same person -------------------------------------
   { nr: 23, nazwa: 'Poprawka odpowiedzi (2. podejście)', sprawdza: 'scenariusz 2 dostaje [nieaktualne]',
-    kto: 'Anna Kowalska (poprawka 1)', baza: { 'obecnosc-dni': DAY_SAT, 'sciezka-1600': FINAL }, strategia: highest, sesjaZ: 2 },
+    kto: 'Anna Kowalska (poprawka 1)', baza: { ...DAY_SAT }, strategia: highest, sesjaZ: 2 },
   { nr: 24, nazwa: 'Kolejna poprawka (3. podejście)', sprawdza: 'dwa starsze wiersze oznaczone, najnowszy czysty',
-    kto: 'Anna Kowalska (poprawka 2)', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': DEBATE3 }, strategia: realistic, sesjaZ: 2 },
+    kto: 'Anna Kowalska (poprawka 2)', baza: { ...BOTH_DAYS }, strategia: realistic, sesjaZ: 2 },
   { nr: 25, nazwa: 'Zmiana zdania: anonimowo → imię', sprawdza: 'ta sama sesja, inny sposób podpisu',
-    kto: 'Tomasz Zieliński (był anonimowy)', baza: { 'obecnosc-dni': BOTH_DAYS, 'sciezka-1600': FINAL }, strategia: realistic, sesjaZ: 6 },
+    kto: 'Tomasz Zieliński (był anonimowy)', baza: { ...BOTH_DAYS }, strategia: realistic, sesjaZ: 6 },
 ]
 
 /* ---------------------------------------------------------- submission --- */
@@ -321,7 +323,9 @@ for (const s of scenarios) {
         : ''
     }
   }
-  answers['koniec-dopisek'] = s.dopisek ?? ''
+  // The free-text closing remark goes into the optional text question of
+  // the last section, which every path sees.
+  if (s.dopisek !== undefined) answers['pod-wrazenie'] = s.dopisek
 
   // Rankings: one key per place, every place sent even when empty, same as
   // buildPayload in src/lib/submit.ts. The strategies above produce a joined
@@ -354,7 +358,6 @@ for (const s of scenarios) {
       labels[key] = `${allLabels[base] || base} [komentarz]`
     }
   }
-  labels['koniec-dopisek'] = 'Dodatkowy komentarz na koniec'
 
   const payload = {
     token: TOKEN,

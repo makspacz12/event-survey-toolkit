@@ -61,10 +61,12 @@ const data = {
   kto: 'TEST POŁĄCZENIA (do skasowania)',
   wersja: 'test',
   pulapka: '',
-  odpowiedzi: { nps: '10', 'obecnosc-dni': 'Piątek (16.10); Sobota (17.10)' },
+  // Keys of the real survey, so the test row lands in existing columns
+  // instead of founding stray ones.
+  odpowiedzi: { 'obecnosc-piatek': 'Tak', 'obecnosc-sobota': 'Tak' },
   etykiety: {
-    nps: 'Na ile prawdopodobne, że polecisz Masterclass Leadership znajomemu?',
-    'obecnosc-dni': 'W których dniach wydarzenia uczestniczyłeś(-aś)?',
+    'obecnosc-piatek': 'Czy brałeś(-aś) udział w piątek, 16 października (dzień otwarcia)?',
+    'obecnosc-sobota': 'Czy brałeś(-aś) udział w sobotę, 17 października (debaty i konkurs)?',
   },
 }
 

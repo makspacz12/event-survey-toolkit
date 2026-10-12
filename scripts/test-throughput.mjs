@@ -91,8 +91,6 @@ function payload(nr) {
       }
     }
   }
-  responses['obecnosc-dni'] = 'Piątek (16.10); Sobota (17.10)'
-  responses['sciezka-1600'] = 'Finał konkursu (Sala Konwersatorium)'
 
   return {
     token: TOKEN,

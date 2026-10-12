@@ -49,6 +49,17 @@ const SPREADSHEET_ID = ''
 /** Name of the tab holding responses. Created automatically if missing. */
 const SHEET_NAME = 'Odpowiedzi'
 
+/**
+ * Second password, for maintenance commands sent to the web app (see
+ * `adminAction`). Unlike TOKEN it is NOT part of the application's code,
+ * so only whoever prepared this file knows it. Leave empty to switch remote
+ * maintenance off altogether.
+ */
+const ADMIN_TOKEN = ''
+
+/** Reported by the "status" command, so you can tell which code is live. */
+const SCRIPT_VERSION = '2026-10-12.2'
+
 /** Fixed columns, always first, in this order. */
 const FIXED_COLUMNS = [
   'Data wysłania',
@@ -94,6 +105,16 @@ function doPost(e) {
     if (dane.pulapka) {
       // Pretend success so the bot doesn't keep trying.
       return respond({ ok: true })
+    }
+
+    // Maintenance commands: what the editor's "Run" button does, callable
+    // from a terminal once the script is deployed. Guarded by a second
+    // password that lives only in this file.
+    if (dane.akcja) {
+      if (!ADMIN_TOKEN || dane.adminToken !== ADMIN_TOKEN) {
+        return respond({ ok: false, blad: 'zly-token-admina' })
+      }
+      return respond(adminAction(String(dane.akcja)))
     }
 
     // Lock: writes queue up, so two people submitting at the same instant
@@ -368,6 +389,65 @@ function markPrevious(arkusz, sesja, naszWiersz) {
       }
     }
   }
+}
+
+/**
+ * Maintenance over HTTP. Each command does what a person would otherwise
+ * do by hand in the editor or the sheet, and none of them deletes a single
+ * answer:
+ *
+ *   status          what is live: script version, tab, column and row counts
+ *   prepareColumns  the same as running prepareColumns from the editor
+ *   archiwizuj      renames the current tab to "Odpowiedzi-<date-time>" and
+ *                   builds a fresh, empty one with every column in place —
+ *                   the way to clear test rows before the event while
+ *                   keeping them in reach
+ */
+function adminAction(akcja) {
+  if (akcja === 'status') {
+    const plik = getSpreadsheet()
+    const arkusz = getSheet()
+    const wierszy = Math.max(arkusz.getLastRow() - 2, 0)
+    const ostatni =
+      wierszy > 0 ? String(arkusz.getRange(arkusz.getLastRow(), 1).getValue()) : ''
+    return {
+      ok: true,
+      wersjaSkryptu: SCRIPT_VERSION,
+      arkusz: plik.getId(),
+      zakladka: arkusz.getName(),
+      kolumn: arkusz.getLastColumn(),
+      wierszy: wierszy,
+      ostatniWpis: ostatni,
+      zakladki: plik.getSheets().map(function (s) {
+        return s.getName()
+      }),
+    }
+  }
+  if (akcja === 'prepareColumns') {
+    return { ok: true, raport: prepareColumns() }
+  }
+  if (akcja === 'archiwizuj') {
+    const lock = LockService.getScriptLock()
+    lock.waitLock(120000)
+    try {
+      const plik = getSpreadsheet()
+      const stara = plik.getSheetByName(SHEET_NAME)
+      let nazwa = ''
+      if (stara) {
+        nazwa =
+          SHEET_NAME +
+          '-' +
+          Utilities.formatDate(new Date(), 'Europe/Warsaw', 'yyyy-MM-dd-HHmm')
+        while (plik.getSheetByName(nazwa)) nazwa += 'b'
+        stara.setName(nazwa)
+      }
+      const raport = prepareColumnsLocked()
+      return { ok: true, zarchiwizowano: nazwa, raport: raport }
+    } finally {
+      lock.releaseLock()
+    }
+  }
+  return { ok: false, blad: 'nieznana-akcja' }
 }
 
 /** JSON response. */

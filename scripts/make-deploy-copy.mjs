@@ -21,6 +21,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -34,18 +35,27 @@ if (sheetId && !/^[A-Za-z0-9_-]{20,}$/.test(sheetId)) {
   process.exit(1)
 }
 
-function tokenFromEnvLocal() {
+const ENV_LOCAL = join(DIR, '.env.local')
+function fromEnvLocal(name) {
   try {
-    const env = readFileSync(join(DIR, '.env.local'), 'utf8')
-    const m = env.match(/^VITE_ARKUSZ_TOKEN=(.*)$/m)
+    const m = readFileSync(ENV_LOCAL, 'utf8').match(new RegExp(`^${name}=(.*)$`, 'm'))
     return m ? m[1].trim() : ''
   } catch {
     return ''
   }
 }
-const token = tokenFromEnvLocal()
+const token = fromEnvLocal('VITE_ARKUSZ_TOKEN')
 if (!token) {
   console.error('No VITE_ARKUSZ_TOKEN in .env.local — the copy would carry the placeholder password.')
+  process.exit(1)
+}
+// The maintenance password never reaches the application, so it has no
+// VITE_ prefix. It is kept in .env.local next to the other secret; this
+// script only reads it and, when it is missing, proposes one to paste there.
+const adminToken = fromEnvLocal('ARKUSZ_ADMIN_TOKEN')
+if (!adminToken) {
+  console.error('No ARKUSZ_ADMIN_TOKEN in .env.local. Add a line like this one and run again:')
+  console.error(`ARKUSZ_ADMIN_TOKEN=${randomBytes(18).toString('base64url')}`)
   process.exit(1)
 }
 
@@ -60,8 +70,12 @@ copy = copy.replace(/^const SPREADSHEET_ID = '[^']*'/m, () => {
   swapped++
   return `const SPREADSHEET_ID = '${sheetId}'`
 })
-if (swapped !== 2) {
-  console.error('Could not find both TOKEN and SPREADSHEET_ID lines in Kod.gs — nothing written.')
+copy = copy.replace(/^const ADMIN_TOKEN = '[^']*'/m, () => {
+  swapped++
+  return `const ADMIN_TOKEN = '${adminToken.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+})
+if (swapped !== 3) {
+  console.error('Could not find the TOKEN, SPREADSHEET_ID and ADMIN_TOKEN lines in Kod.gs — nothing written.')
   process.exit(1)
 }
 
@@ -69,4 +83,5 @@ writeFileSync(OUTPUT, copy, 'utf8')
 console.log(`Written: ${OUTPUT}`)
 console.log(`  password: ${token.slice(0, 3)}… (from .env.local)`)
 console.log(`  spreadsheet id: ${sheetId || '(empty — script bound to its own sheet)'}`)
+console.log(`  maintenance password: ${adminToken.slice(0, 3)}… (ARKUSZ_ADMIN_TOKEN in .env.local)`)
 console.log('Paste the whole file into the Apps Script editor, then Deploy → Manage deployments → New version.')

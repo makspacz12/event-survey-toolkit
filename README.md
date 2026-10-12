@@ -139,7 +139,8 @@ for local development.
 | `npm run test:script` | Runs the Apps Script logic locally against a mocked Google API — 85 assertions, no network |
 | `node scripts/mock-sheet-server.mjs` | Local stand-in for the deployed endpoint: the real Apps Script code on an in-memory sheet that can be read back over HTTP |
 | `node scripts/simulate-users.mjs --users 100 --concurrency 100` | A crowd of personas, each in its own headless browser, checked cell by cell against the mock sheet (`--target prod` aims at the public URL) |
-| `npm run deploy-copy -- <spreadsheet id>` | Builds the paste-ready script copy with the real password and spreadsheet id (git-ignored) |
+| `npm run deploy-copy -- <spreadsheet id>` | Builds the paste-ready script copy with the real passwords and spreadsheet id (git-ignored) |
+| `npm run sheet-admin -- status \| prepareColumns \| archiwizuj` | Maintenance of the live sheet over HTTP, guarded by a second password that never reaches the app: which code is live, set up columns, archive the current tab and start a fresh one |
 | `npm run test:scenarios` | Walks 25 filling scenarios end to end |
 | `npm run test:fields` | Submits two rows filling every field, to verify column alignment |
 | `npm run test:load` | Load test with concurrent submissions |

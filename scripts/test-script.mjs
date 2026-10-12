@@ -629,6 +629,48 @@ check('osierocona kolumna z danymi została (nie skasowano cudzych danych)', col
 check('po prepareColumns żaden nagłówek nie jest formułą', sheet20.data[0].every((v) => typeof v === 'string') && sheet20.data[1].every((v) => typeof v === 'string'), JSON.stringify([sheet20.data[0][col21], sheet20.data[1][col21]]))
 check('treść podejrzanego nagłówka zachowana jako tekst', sheet20.data[1][col21] === '=IMPORTRANGE("x")')
 
+/* 22–24. Maintenance commands over HTTP */
+console.log('\n22. Polecenia administracyjne: hasło')
+const file22 = createFile()
+const holder22 = { file: file22, cache: {}, consoleErrors: [], loggerEntries: [] }
+const script22 = loadScript(
+  source.replace(/const ADMIN_TOKEN = '[^']*'/, "const ADMIN_TOKEN = 'admin-test'"),
+  createEnvironment(holder22),
+  ['doPost', 'SHEET_NAME', 'TOKEN', 'SURVEY_COLUMNS', 'FIXED_COLUMNS'],
+).script
+const admin = (body) => JSON.parse(script22.doPost({ postData: { contents: JSON.stringify({ token: script22.TOKEN, pulapka: '', ...body }) } }).tresc)
+check('bez hasła admina odrzucone', admin({ akcja: 'status' }).blad === 'zly-token-admina')
+check('ze złym hasłem admina odrzucone', admin({ akcja: 'status', adminToken: 'nie' }).blad === 'zly-token-admina')
+check('nieznane polecenie odrzucone', admin({ akcja: 'wysadz', adminToken: 'admin-test' }).blad === 'nieznana-akcja')
+const scriptNoAdmin = loadScript(source, createEnvironment({ file: createFile(), cache: {}, consoleErrors: [], loggerEntries: [] }), ['doPost', 'TOKEN']).script
+const noAdmin = JSON.parse(scriptNoAdmin.doPost({ postData: { contents: JSON.stringify({ token: scriptNoAdmin.TOKEN, pulapka: '', akcja: 'status', adminToken: '' }) } }).tresc)
+check('przy pustym ADMIN_TOKEN polecenia są wyłączone', noAdmin.blad === 'zly-token-admina')
+
+console.log('\n23. Polecenia administracyjne: status i prepareColumns')
+const st0 = admin({ akcja: 'status', adminToken: 'admin-test' })
+check('status na pustym arkuszu', st0.ok === true && st0.wierszy === 0 && st0.kolumn === 4 && st0.zakladka === 'Odpowiedzi', JSON.stringify(st0))
+check('status podaje wersję skryptu', /^\d{4}-\d{2}-\d{2}/.test(String(st0.wersjaSkryptu)), String(st0.wersjaSkryptu))
+const pc = admin({ akcja: 'prepareColumns', adminToken: 'admin-test' })
+check('prepareColumns przez HTTP zakłada komplet kolumn', pc.ok === true && /Kolumn w arkuszu:\s+54/.test(pc.raport), String(pc.raport).slice(0, 80))
+admin({ sesja: 'adm-1', kto: 'Ala', wersja: 'x', odpowiedzi: { 'org-jedzenie': '8' }, etykiety: { 'org-jedzenie': 'Jedzenie' } })
+const st1 = admin({ akcja: 'status', adminToken: 'admin-test' })
+check('status liczy wiersze i kolumny', st1.wierszy === 1 && st1.kolumn === 54 && st1.ostatniWpis !== '', JSON.stringify(st1))
+
+console.log('\n24. Polecenia administracyjne: archiwizacja zakładki')
+const arch = admin({ akcja: 'archiwizuj', adminToken: 'admin-test' })
+check('archiwizacja przyjęta', arch.ok === true && arch.zarchiwizowano.startsWith('Odpowiedzi-'), JSON.stringify(arch).slice(0, 120))
+const stara = file22.tabs.get(arch.zarchiwizowano)
+const nowa = file22.tabs.get('Odpowiedzi')
+check('stara zakładka zachowana razem z danymi', stara && stara.data.length === 3 && stara.data[2][2] === 'Ala')
+check('nowa zakładka ma komplet kolumn i brak wierszy', nowa && nowa.data[0].length === 54 && nowa.data.length === 2)
+check('nowa zakładka: wiersze nagłówków zamrożone, wiersz 1 ukryty', nowa._state().frozen === 2 && nowa._state().hidden.includes(1))
+admin({ sesja: 'adm-2', kto: 'Bartek', wersja: 'x', odpowiedzi: { 'org-jedzenie': '9' }, etykiety: { 'org-jedzenie': 'Jedzenie' } })
+check('kolejna odpowiedź trafia do nowej zakładki, pod swoją kolumnę', nowa.data.length === 3 && nowa.data[2][nowa.data[0].indexOf('org-jedzenie')] === '9' && stara.data.length === 3)
+const st2 = admin({ akcja: 'status', adminToken: 'admin-test' })
+check('status wymienia obie zakładki', st2.zakladki.includes('Odpowiedzi') && st2.zakladki.includes(arch.zarchiwizowano), JSON.stringify(st2.zakladki))
+const arch2 = admin({ akcja: 'archiwizuj', adminToken: 'admin-test' })
+check('druga archiwizacja w tej samej minucie dostaje inną nazwę', arch2.ok === true && arch2.zarchiwizowano !== arch.zarchiwizowano, arch2.zarchiwizowano)
+
 /* ------------------------------------------------------------- summary --- */
 
 console.log(`\n=== Wynik: ${passed} zdanych, ${failed} oblanych ===\n`)

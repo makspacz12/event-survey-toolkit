@@ -20,6 +20,7 @@
     "columns": "node scripts/generate-columns.mjs",
     "columns:excel": "node scripts/columns-to-excel.mjs",
     "deploy-copy": "node scripts/make-deploy-copy.mjs",
+    "sheet-admin": "node scripts/sheet-admin.mjs",
     "test:fields": "node scripts/test-all-fields.mjs"
   },
   "dependencies": {

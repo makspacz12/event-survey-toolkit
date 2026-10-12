@@ -33,6 +33,7 @@ export function enterLikeSheets(value) {
 
 /** One tab of a spreadsheet: a grid of cells plus the bits of formatting state the script touches. */
 export function createSheet(name, parent) {
+  let nazwa = name
   const data = [] // array of rows, each an array of cells
   const id = nextSheetId++ // every tab gets a fresh id, like in Sheets
   let frozen = 0
@@ -45,11 +46,22 @@ export function createSheet(name, parent) {
     return row
   }
 
-  return {
-    name,
+  const sheet = {
+    get name() {
+      return nazwa
+    },
     data,
     _state: () => ({ frozen, hidden }),
-    getName: () => name,
+    getName: () => nazwa,
+    // Renaming moves the tab under its new name in the file, as in Sheets.
+    setName: (n) => {
+      if (parent && parent.tabs) {
+        parent.tabs.delete(nazwa)
+        parent.tabs.set(n, sheet)
+      }
+      nazwa = n
+      return sheet
+    },
     getSheetId: () => id,
     getParent: () => parent,
     // Removes one column from every row, the way Sheets does.
@@ -103,6 +115,7 @@ export function createSheet(name, parent) {
       },
     }),
   }
+  return sheet
 }
 
 /** A spreadsheet file: a named set of tabs with an id of its own. */
@@ -113,6 +126,7 @@ export function createFile() {
     tabs,
     getId: () => id,
     getSheetByName: (n) => tabs.get(n) || null,
+    getSheets: () => [...tabs.values()],
     insertSheet: (n) => {
       const a = createSheet(n, file)
       tabs.set(n, a)

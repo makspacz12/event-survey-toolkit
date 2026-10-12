@@ -52,6 +52,8 @@ function tokenFromEnvLocal() {
   }
 }
 const TOKEN = process.env.MOCK_TOKEN || tokenFromEnvLocal() || 'masterclass'
+/** The maintenance password, so `npm run sheet-admin` can be rehearsed here too. */
+const ADMIN_TOKEN = process.env.MOCK_ADMIN_TOKEN || 'admin-mock'
 
 /** Warsaw wall-clock time in the script's own format. */
 function warsawNow() {
@@ -73,10 +75,9 @@ function boot() {
   const environment = createEnvironment(holder, { now: warsawNow })
   // The repository copy of the script carries a placeholder password; the
   // app sends the real one, so the two are lined up here.
-  const source = readFileSync(CODE, 'utf8').replace(
-    /const TOKEN = '[^']*'/,
-    `const TOKEN = '${TOKEN.replace(/'/g, "\\'")}'`,
-  )
+  const source = readFileSync(CODE, 'utf8')
+    .replace(/const TOKEN = '[^']*'/, `const TOKEN = '${TOKEN.replace(/'/g, "\\'")}'`)
+    .replace(/const ADMIN_TOKEN = '[^']*'/, `const ADMIN_TOKEN = '${ADMIN_TOKEN}'`)
   script = loadScript(source, environment, ['doPost', 'prepareColumns', 'SHEET_NAME']).script
   stats.received = 0
   stats.written = 0

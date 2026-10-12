@@ -136,7 +136,10 @@ for local development.
 | `npm run build` | Production build into `dist/` |
 | `npm run columns` | Regenerates the column list inside the Apps Script from `ankieta.json` |
 | `npm run columns:excel` | Exports the sheet layout as `.xlsx` for the organisers |
-| `npm run test:script` | Runs the Apps Script logic locally against a mocked Google API — 54 assertions, no network |
+| `npm run test:script` | Runs the Apps Script logic locally against a mocked Google API — 85 assertions, no network |
+| `node scripts/mock-sheet-server.mjs` | Local stand-in for the deployed endpoint: the real Apps Script code on an in-memory sheet that can be read back over HTTP |
+| `node scripts/simulate-users.mjs --users 100 --concurrency 100` | A crowd of personas, each in its own headless browser, checked cell by cell against the mock sheet (`--target prod` aims at the public URL) |
+| `npm run deploy-copy -- <spreadsheet id>` | Builds the paste-ready script copy with the real password and spreadsheet id (git-ignored) |
 | `npm run test:scenarios` | Walks 25 filling scenarios end to end |
 | `npm run test:fields` | Submits two rows filling every field, to verify column alignment |
 | `npm run test:load` | Load test with concurrent submissions |
@@ -176,12 +179,21 @@ spreadsheet or the network:
 
 ```
 $ npm run test:script
-=== Wynik: 54 zdanych, 0 oblanych ===
+=== Wynik: 85 zdanych, 0 oblanych ===
 ```
 
 Coverage includes concurrent writes, stale cache recovery, duplicate submissions from
-the same device, bot honeypot rejection, wrong tokens, and column alignment against the
-live question set.
+the same device, bot honeypot rejection, wrong tokens, formula injection through
+participant text, header-cache keys per tab, and column alignment against the live
+question set.
+
+The same fakes power `scripts/mock-sheet-server.mjs`, a local copy of the web-app
+endpoint. A build pointed at it (`VITE_ARKUSZ_URL=http://127.0.0.1:8787/exec`) lets
+`scripts/simulate-users.mjs` drive a hundred different participants through the survey
+at once — different attendance, names with awkward characters, "did not attend" marks,
+rankings picked and un-picked, page reloads mid-way, a change of mind about Friday, a
+correction after the confirmation screen — and then compare every expected answer with
+the cell that landed in the mock sheet.
 
 ---
 
@@ -194,10 +206,13 @@ src/
     robot/         isolated Spline 3D scene
     ui/            buttons, icons, background
   data/ankieta.json   the survey itself
+  lib/visibility.ts   which sections and questions are shown, shared by flow, summary and submission
+  lib/ranking.ts      cleaning of ranking answers (one person per place)
   lib/submit.ts       submission, retry and offline queue
 apps-script/
   Kod.gs              the Google Apps Script (template)
 scripts/              tests, generators, load testing
+  lib/fake-google.mjs the in-memory stand-ins for Google services used by the tests and the mock server
 docs/screenshots/     the images in this README
 ```
 

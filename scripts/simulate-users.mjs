@@ -499,7 +499,9 @@ async function runPersona(p, browser) {
         continue // answer whatever screen we are on now (or move on if already done)
       }
 
-      if (p.quirks.goBackOnce && !wentBack && visited === 2) {
+      // Only from a section that has one before it: "Wstecz" on the first
+      // section leads to the welcome screen, which has no "Dalej".
+      if (p.quirks.goBackOnce && !wentBack && expectedTitles.indexOf(heading) > 0) {
         wentBack = true
         await page.getByRole('button', { name: 'Wstecz' }).click()
         const prev = await waitForScreen(page, { not: heading })

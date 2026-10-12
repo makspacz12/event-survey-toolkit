@@ -225,7 +225,7 @@
         {
           "id": "sb-partnerstwo",
           "typ": "skala",
-          "tresc": "Rozmowa o książce „Partnerstwo” z Markiem Brzezińskim i Olgą Leonowicz",
+          "tresc": "Rozmowa o książce „Partnerstwo” z Markiem Brzezinskim i Olgą Leonowicz",
           "min": 1,
           "max": 10,
           "nieobecnosc": true,

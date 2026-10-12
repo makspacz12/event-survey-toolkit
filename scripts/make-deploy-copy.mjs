@@ -98,18 +98,22 @@ const polishHeader = `/**
  * Ten plik jest gotowy do wklejenia. Wszystkie wartości poniżej (hasła,
  * identyfikator arkusza) są już wpisane. NICZEGO NIE TRZEBA ZMIENIAĆ.
  *
- * CO ZROBIĆ (2 kroki, około 3 minuty):
- *  1. W arkuszu „Masterclass Leadership 2026 — Ankieta odpowiedzi”:
+ * CO ZROBIĆ:
+ *  1. W arkuszu docelowym (jego identyfikator jest wpisany poniżej):
  *     Rozszerzenia → Apps Script. W pliku Kod.gs: Ctrl+A, Delete,
  *     wklej cały ten plik, Ctrl+S.
- *  2. Wdróż → Zarządzaj wdrożeniami → ołówek (Edytuj) →
- *     Wersja: „Nowa wersja” → Wdróż. Adres /exec zostaje ten sam.
+ *  2. Pierwsze wdrożenie: Wdróż → Nowe wdrożenie → typ: Aplikacja
+ *     internetowa → Wykonaj jako: Ja → Kto ma dostęp: Każdy → Wdróż.
+ *     Skopiuj adres kończący się na /exec i wpisz go w aplikacji
+ *     (Vercel: VITE_ARKUSZ_URL, potem Redeploy).
+ *     Kolejne zmiany kodu: Wdróż → Zarządzaj wdrożeniami → ołówek →
+ *     Wersja: „Nowa wersja” → Wdróż. Adres /exec zostaje wtedy ten sam.
  *
- * BEZ KROKU 2 NIC SIĘ NIE ZMIENIA: edytor to brudnopis, a aplikacja
+ * SAMO WKLEJENIE NIC NIE ZMIENIA: edytor to brudnopis, a aplikacja
  * internetowa serwuje ostatnio opublikowaną wersję.
  *
- * W arkuszu nie trzeba niczego klikać. Uporządkowanie kolumn i odłożenie
- * wierszy testowych zrobi zdalnie Maks (polecenia serwisowe poniżej).
+ * W arkuszu nie trzeba niczego klikać. Kolumny i wiersze testowe
+ * porządkuje się zdalnie (polecenia serwisowe poniżej).
  *
  * Ten plik zawiera hasła: nie wysyłaj go dalej i nie wklejaj do
  * publicznych repozytoriów. Dalsze komentarze w kodzie są po angielsku

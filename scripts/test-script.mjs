@@ -607,7 +607,7 @@ const sheet20 = file20.tabs.get(script20.SHEET_NAME)
 const kto20 = () => sheet20.data.slice(2).map((w) => w[2])
 // The situation the lock cannot prevent: A's row is written, the lock is
 // released, B's row lands underneath, and only THEN A's marking runs.
-script20.markPrevious(sheet20, 'sesja-A', 3)
+script20.markPrevious(sheet20, 'sesja-A')
 check('własny wiersz nie dostaje dopisku, choć pod nim leży już cudzy', kto20()[0] === 'Ala', JSON.stringify(kto20()))
 check('cudzy wiersz nietknięty', kto20()[1] === 'Bartek')
 send20('sesja-A', 'Ala')

@@ -58,7 +58,7 @@ const SHEET_NAME = 'Odpowiedzi'
 const ADMIN_TOKEN = ''
 
 /** Reported by the "status" command, so you can tell which code is live. */
-const SCRIPT_VERSION = '2026-10-12.2'
+const SCRIPT_VERSION = '2026-10-13.1'
 
 /** Fixed columns, always first, in this order. */
 const FIXED_COLUMNS = [
@@ -117,6 +117,14 @@ function doPost(e) {
       return respond(adminAction(String(dane.akcja)))
     }
 
+    // The sheet handle is taken BEFORE the lock. Opening the file and
+    // finding the tab are round trips to Google that every request can do
+    // at the same time; only the append has to wait its turn. Measured on a
+    // plain Gmail account, where each round trip costs about 0.35 s: with
+    // five calls under the lock the script managed 0.6 writes a second and
+    // lost two thirds of a 300-person rush; with one call it keeps up.
+    const arkusz = getSheet()
+
     // Lock: writes queue up, so two people submitting at the same instant
     // don't collide on the same row.
     //
@@ -131,20 +139,17 @@ function doPost(e) {
       console.error('Failed to acquire the lock within 120 s — write skipped.')
       return respond({ ok: false, blad: 'kolejka-przepelniona' })
     }
-    let naszWiersz = 0
     try {
-      naszWiersz = save(dane)
+      save(dane, arkusz)
     } finally {
       lock.releaseLock()
     }
 
     // Marking a person's earlier submissions requires reading the whole
     // session-id column — the most expensive operation in the entire write.
-    // We do it AFTER releasing the lock, so it doesn't block the next
-    // person. Our row's number was taken under the lock, so rows appended
-    // by others in the meantime are never mistaken for ours.
+    // We do it AFTER releasing the lock, so it doesn't block the next person.
     try {
-      markPrevious(getSheet(), dane.sesja, naszWiersz)
+      markPrevious(arkusz, dane.sesja)
     } catch (err) {
       console.error('Marking previous entries failed: ' + err)
     }
@@ -168,10 +173,10 @@ function doPost(e) {
  * 22 writes out of 50 attempts.
  *
  * That's why the critical section does the MINIMUM: read headers (from
- * cache) and append the row. Everything else happens outside the lock.
+ * cache) and append the row — one round trip to Google when the cache is
+ * warm. Everything else happens outside the lock.
  */
-function save(dane) {
-  const arkusz = getSheet()
+function save(dane, arkusz) {
   let naglowki = headersFromCache(arkusz)
 
   // New questions (e.g. added mid-collection) get a column at the end.
@@ -201,9 +206,6 @@ function save(dane) {
   })
 
   arkusz.appendRow(wiersz)
-  // Taken while the lock is still held: nobody else can append in between,
-  // so this is exactly the row that was just written.
-  return arkusz.getLastRow()
 }
 
 /**
@@ -271,6 +273,45 @@ function headersFromCache(arkusz) {
   }
 }
 
+/**
+ * Row 1 holds question identifiers, and data is arranged in that order.
+ *
+ * A tab with nothing in it yet (brand new, or emptied by hand) gets its two
+ * header rows here, on the cold path: this runs only when the header list
+ * is not in the cache, so the ordinary write never pays for the check.
+ */
+function getHeaders(arkusz) {
+  if (arkusz.getLastRow() === 0) {
+    initHeaders(arkusz)
+    return FIXED_COLUMNS.slice()
+  }
+  const szerokosc = Math.max(arkusz.getLastColumn(), FIXED_COLUMNS.length)
+  return arkusz
+    .getRange(1, 1, 1, szerokosc)
+    .getValues()[0]
+    .map((v) => String(v))
+}
+
+/** The two header rows of a fresh tab, plus their formatting. */
+function initHeaders(arkusz) {
+  // Row 1: identifiers (technical, hidden).
+  arkusz.appendRow(FIXED_COLUMNS)
+  // Row 2: human-readable headers.
+  arkusz.appendRow(FIXED_COLUMNS)
+  arkusz.getRange(1, 1, 1, FIXED_COLUMNS.length).setFontColor('#999999')
+  arkusz.getRange(2, 1, 1, FIXED_COLUMNS.length).setFontWeight('bold')
+  arkusz.setFrozenRows(2)
+  arkusz.hideRows(1)
+  // The tab was just (re)built, so whatever the cache remembers about it
+  // is from a previous life. A tab emptied by hand keeps its id, so the
+  // key alone would not catch this case.
+  try {
+    CacheService.getScriptCache().remove(headersCacheKey(arkusz))
+  } catch (err) {
+    /* a cache hiccup must not stop the write */
+  }
+}
+
 function saveHeadersToCache(arkusz, naglowki) {
   try {
     CacheService.getScriptCache().put(
@@ -285,36 +326,26 @@ function saveHeadersToCache(arkusz, naglowki) {
 
 /**
  * Returns the responses tab. CREATES IT if it doesn't exist, along with the
- * header row. This means deployment works even on an empty, freshly created
- * sheet, and nobody has to prepare anything by hand.
+ * header rows. This means deployment works even on an empty, freshly
+ * created sheet, and nobody has to prepare anything by hand.
+ *
+ * Two round trips (open the file, find the tab) and nothing more: this runs
+ * for every submission, before the lock, so it must stay cheap.
  */
 function getSheet() {
   const plik = getSpreadsheet()
   let arkusz = plik.getSheetByName(SHEET_NAME)
-
   if (!arkusz) {
-    arkusz = plik.insertSheet(SHEET_NAME)
-  }
-
-  if (arkusz.getLastRow() === 0) {
-    // Row 1: identifiers (technical, hidden).
-    arkusz.appendRow(FIXED_COLUMNS)
-    // Row 2: human-readable headers.
-    arkusz.appendRow(FIXED_COLUMNS)
-    arkusz.getRange(1, 1, 1, FIXED_COLUMNS.length).setFontColor('#999999')
-    arkusz.getRange(2, 1, 1, FIXED_COLUMNS.length).setFontWeight('bold')
-    arkusz.setFrozenRows(2)
-    arkusz.hideRows(1)
-    // The tab was just (re)built, so whatever the cache remembers about it
-    // is from a previous life. A tab emptied by hand keeps its id, so the
-    // key alone would not catch this case.
     try {
-      CacheService.getScriptCache().remove(headersCacheKey(arkusz))
+      arkusz = plik.insertSheet(SHEET_NAME)
+      initHeaders(arkusz)
     } catch (err) {
-      /* a cache hiccup must not stop the write */
+      // Two first-ever requests at the same instant: the other one just
+      // created the tab, so take that one.
+      arkusz = plik.getSheetByName(SHEET_NAME)
+      if (!arkusz) throw err
     }
   }
-
   return arkusz
 }
 
@@ -335,15 +366,6 @@ function getSpreadsheet() {
     )
   }
   return aktywny
-}
-
-/** Row 1 holds question identifiers, and data is arranged in that order. */
-function getHeaders(arkusz) {
-  const szerokosc = Math.max(arkusz.getLastColumn(), FIXED_COLUMNS.length)
-  return arkusz
-    .getRange(1, 1, 1, szerokosc)
-    .getValues()[0]
-    .map((v) => String(v))
 }
 
 /** Adds columns for questions the sheet doesn't know about yet. */
@@ -367,26 +389,30 @@ function addColumns(arkusz, naglowki, noweId, etykiety) {
  * you can see the person changed their mind, and the newest response is
  * always the lowest row.
  */
-function markPrevious(arkusz, sesja, naszWiersz) {
+function markPrevious(arkusz, sesja) {
   if (!sesja) return
   const kolSesja = 2 // second column per FIXED_COLUMNS
   const kolKto = 3
-  // Only the rows ABOVE the one just written are candidates. This used to
-  // read down to the sheet's last row and skip just that one — but the lock
-  // is already released here, so under load the last row often belongs to
-  // the NEXT person, and the loop then stamped our own, only answer as
-  // superseded. The row number comes from `save`, taken under the lock.
-  const doWiersza = naszWiersz || arkusz.getLastRow()
-  if (doWiersza < 4) return
+  const ostatni = arkusz.getLastRow()
+  if (ostatni < 4) return
 
-  const sesje = arkusz.getRange(3, kolSesja, doWiersza - 3, 1).getValues()
+  // Every row of this session except the NEWEST one, which is the row just
+  // written. An earlier version skipped the sheet's last row instead — but
+  // the lock is already released here, so under load the last row often
+  // belongs to the next person, and that stamped our own, only answer as
+  // superseded. Nobody else writes our session id, so the newest row with
+  // it is ours no matter how many rows others appended underneath.
+  const sesje = arkusz.getRange(3, kolSesja, ostatni - 2, 1).getValues()
+  const nasze = []
   for (let i = 0; i < sesje.length; i++) {
-    if (String(sesje[i][0]) === String(sesja)) {
-      const komorka = arkusz.getRange(3 + i, kolKto)
-      const obecne = String(komorka.getValue())
-      if (obecne.indexOf('[nieaktualne]') === -1) {
-        komorka.setValue('[nieaktualne] ' + obecne)
-      }
+    if (String(sesje[i][0]) === String(sesja)) nasze.push(i)
+  }
+  nasze.pop()
+  for (let n = 0; n < nasze.length; n++) {
+    const komorka = arkusz.getRange(3 + nasze[n], kolKto)
+    const obecne = String(komorka.getValue())
+    if (obecne.indexOf('[nieaktualne]') === -1) {
+      komorka.setValue('[nieaktualne] ' + obecne)
     }
   }
 }
@@ -463,7 +489,8 @@ function respond(obiekt) {
  * appends one sample row, which you can then delete by hand.
  */
 function testSave() {
-  save({
+  save(
+    {
     sesja: 'test-' + new Date().getTime(),
     kto: 'TEST (do skasowania)',
     wersja: 'test',
@@ -472,7 +499,9 @@ function testSave() {
       'nps': 'Na ile prawdopodobne, że polecisz Masterclass znajomemu?',
       'obecnosc-dni': 'W których dniach uczestniczyłeś(-aś)?',
     },
-  })
+    },
+    getSheet(),
+  )
   console.log('Test row saved. Check the "' + SHEET_NAME + '" tab.')
 }
 

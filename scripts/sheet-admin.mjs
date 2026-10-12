@@ -53,17 +53,27 @@ const res = await fetch(URL, {
   redirect: 'follow',
 })
 const text = await res.text()
-let out
+// No process.exit() anywhere below: on Windows it trips a libuv assertion
+// while the connection is still closing. The process ends on its own.
+let out = null
 try {
   out = JSON.parse(text)
 } catch {
   console.error(`Odpowiedź nie jest JSON-em (status ${res.status}):\n${text.slice(0, 400)}`)
-  process.exit(1)
+  process.exitCode = 1
 }
-console.log(`${akcja} → ${Date.now() - t0} ms`)
-if (out.raport) {
-  console.log(String(out.raport).split('\n').map((l) => '  ' + l).join('\n'))
-  delete out.raport
+if (out) {
+  // The code from before October 2026 knows no maintenance commands: it
+  // treats the request as an empty submission and answers a bare {ok:true}.
+  const staryKod = out.ok && !('wersjaSkryptu' in out) && !('raport' in out) && !('zarchiwizowano' in out)
+  console.log(`${akcja} → ${Date.now() - t0} ms`)
+  if (out.raport) {
+    console.log(String(out.raport).split('\n').map((l) => '  ' + l).join('\n'))
+    delete out.raport
+  }
+  console.log(JSON.stringify(out, null, 2))
+  process.exitCode = out.ok && !staryKod ? 0 : 1
+  if (staryKod) {
+    console.error('UWAGA: pod tym adresem działa STARY kod skryptu. Polecenie zostało zignorowane, a do arkusza trafił pusty wiersz.')
+  }
 }
-console.log(JSON.stringify(out, null, 2))
-process.exitCode = out.ok ? 0 : 1

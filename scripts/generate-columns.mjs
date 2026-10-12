@@ -36,7 +36,17 @@ export function buildColumns(survey) {
   const columns = []
   for (const section of survey.sekcje) {
     for (const p of section.pytania) {
-      columns.push([p.id, p.tresc])
+      // Must mirror `buildPayload` in src/lib/submit.ts exactly, including the
+      // one-column-per-place rule for rankings. If these two loops disagree,
+      // the sheet's headers stop describing the data underneath them.
+      if (p.typ === 'ranking') {
+        const miejsca = p.max ?? 3
+        for (let i = 1; i <= miejsca; i += 1) {
+          columns.push([`${p.id}::${i}`, `${p.tresc} [${i}. miejsce]`])
+        }
+      } else {
+        columns.push([p.id, p.tresc])
+      }
       if (p.komentarz) {
         columns.push([`${p.id}::komentarz`, `${p.tresc} [komentarz]`])
       }

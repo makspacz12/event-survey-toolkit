@@ -110,8 +110,9 @@ function doPost(e) {
       console.error('Failed to acquire the lock within 120 s — write skipped.')
       return respond({ ok: false, blad: 'kolejka-przepelniona' })
     }
+    let naszWiersz = 0
     try {
-      save(dane)
+      naszWiersz = save(dane)
     } finally {
       lock.releaseLock()
     }
@@ -119,9 +120,10 @@ function doPost(e) {
     // Marking a person's earlier submissions requires reading the whole
     // session-id column — the most expensive operation in the entire write.
     // We do it AFTER releasing the lock, so it doesn't block the next
-    // person. Row order is already fixed, so this doesn't break anything.
+    // person. Our row's number was taken under the lock, so rows appended
+    // by others in the meantime are never mistaken for ours.
     try {
-      markPrevious(getSheet(), dane.sesja)
+      markPrevious(getSheet(), dane.sesja, naszWiersz)
     } catch (err) {
       console.error('Marking previous entries failed: ' + err)
     }
@@ -160,7 +162,7 @@ function save(dane) {
   if (brakujace.length > 0) {
     addColumns(arkusz, naglowki, brakujace, dane.etykiety || {})
     naglowki = naglowki.concat(brakujace)
-    saveHeadersToCache(naglowki)
+    saveHeadersToCache(arkusz, naglowki)
   }
 
   const czas = Utilities.formatDate(
@@ -171,17 +173,56 @@ function save(dane) {
   const wiersz = naglowki.map(function (id) {
     if (id === 'Data wysłania') return czas
     if (id === 'Identyfikator sesji') return dane.sesja || ''
-    if (id === 'Kto wypełnił') return dane.kto || 'anonimowo'
+    if (id === 'Kto wypełnił') return plainText(dane.kto || 'anonimowo')
     if (id === 'Wersja ankiety') return dane.wersja || ''
     const w = (dane.odpowiedzi || {})[id]
-    return w === undefined || w === null ? '' : String(w)
+    return w === undefined || w === null ? '' : plainText(w)
   })
 
   arkusz.appendRow(wiersz)
+  // Taken while the lock is still held: nobody else can append in between,
+  // so this is exactly the row that was just written.
+  return arkusz.getLastRow()
 }
 
-/** Cache key for headers. */
-const HEADERS_CACHE_KEY = 'naglowki-v1'
+/**
+ * A participant's words go into the sheet as words, never as a formula.
+ *
+ * Sheets reads what `appendRow` and `setValue` write the way it reads typing:
+ * a cell that starts with "=" becomes a formula, and "+1+1" or "-1+1" become
+ * arithmetic. A comment such as `=HYPERLINK(...)` or `=IMPORTRANGE(...)`
+ * would then RUN inside the organiser's spreadsheet, with the organiser's
+ * access. The leading apostrophe is the sheet's own "this is text" mark: it
+ * is not displayed and is not part of the stored value, so the cell reads
+ * exactly what the participant typed.
+ *
+ * Plain numbers are left alone. A rating of "7" has to stay a number so it
+ * can be averaged, and "-5" in a comment is harmless.
+ *
+ * A text that itself starts with an apostrophe gets a second one, because
+ * the sheet would otherwise swallow the participant's own.
+ */
+function plainText(value) {
+  const s = String(value)
+  const risky = /^\s*[=+\-@']/.test(s)
+  const plainNumber = /^\s*[+-]?\d+([.,]\d+)?\s*$/.test(s)
+  return risky && !plainNumber ? "'" + s : s
+}
+
+/** Prefix of the header-cache key; the rest names the exact tab. */
+const HEADERS_CACHE_PREFIX = 'naglowki-v2:'
+
+/**
+ * The cached header list is tied to the exact tab it was read from.
+ *
+ * A new spreadsheet or a deleted-and-recreated "Odpowiedzi" tab has a
+ * different id, so a stale list is never consulted for it. Before this,
+ * deleting the tab while the cache was warm meant up to six hours of rows
+ * written against columns that no longer existed — and nothing complained.
+ */
+function headersCacheKey(arkusz) {
+  return HEADERS_CACHE_PREFIX + arkusz.getParent().getId() + ':' + arkusz.getSheetId()
+}
 
 /**
  * Headers from the script cache. The first write after a cold start reads
@@ -194,13 +235,14 @@ const HEADERS_CACHE_KEY = 'naglowki-v1'
 function headersFromCache(arkusz) {
   try {
     const cache = CacheService.getScriptCache()
-    const zapisane = cache.get(HEADERS_CACHE_KEY)
+    const klucz = headersCacheKey(arkusz)
+    const zapisane = cache.get(klucz)
     if (zapisane) {
       const lista = JSON.parse(zapisane)
       if (lista && lista.length >= FIXED_COLUMNS.length) return lista
     }
     const swieze = getHeaders(arkusz)
-    cache.put(HEADERS_CACHE_KEY, JSON.stringify(swieze), 21600)
+    cache.put(klucz, JSON.stringify(swieze), 21600)
     return swieze
   } catch (err) {
     // A cache failure must not bring down the write.
@@ -208,10 +250,10 @@ function headersFromCache(arkusz) {
   }
 }
 
-function saveHeadersToCache(naglowki) {
+function saveHeadersToCache(arkusz, naglowki) {
   try {
     CacheService.getScriptCache().put(
-      HEADERS_CACHE_KEY,
+      headersCacheKey(arkusz),
       JSON.stringify(naglowki),
       21600,
     )
@@ -242,6 +284,14 @@ function getSheet() {
     arkusz.getRange(2, 1, 1, FIXED_COLUMNS.length).setFontWeight('bold')
     arkusz.setFrozenRows(2)
     arkusz.hideRows(1)
+    // The tab was just (re)built, so whatever the cache remembers about it
+    // is from a previous life. A tab emptied by hand keeps its id, so the
+    // key alone would not catch this case.
+    try {
+      CacheService.getScriptCache().remove(headersCacheKey(arkusz))
+    } catch (err) {
+      /* a cache hiccup must not stop the write */
+    }
   }
 
   return arkusz
@@ -280,10 +330,12 @@ function addColumns(arkusz, naglowki, noweId, etykiety) {
   const start = naglowki.length + 1
   noweId.forEach((id, i) => {
     const kol = start + i
-    arkusz.getRange(1, kol).setValue(id).setFontColor('#999999')
+    // The header text comes from the client too, so it gets the same
+    // treatment as an answer.
+    arkusz.getRange(1, kol).setValue(plainText(id)).setFontColor('#999999')
     arkusz
       .getRange(2, kol)
-      .setValue(etykiety[id] || id)
+      .setValue(plainText(etykiety[id] || id))
       .setFontWeight('bold')
   })
 }
@@ -294,15 +346,20 @@ function addColumns(arkusz, naglowki, noweId, etykiety) {
  * you can see the person changed their mind, and the newest response is
  * always the lowest row.
  */
-function markPrevious(arkusz, sesja) {
+function markPrevious(arkusz, sesja, naszWiersz) {
   if (!sesja) return
   const kolSesja = 2 // second column per FIXED_COLUMNS
   const kolKto = 3
-  const ostatni = arkusz.getLastRow()
-  if (ostatni < 4) return
+  // Only the rows ABOVE the one just written are candidates. This used to
+  // read down to the sheet's last row and skip just that one — but the lock
+  // is already released here, so under load the last row often belongs to
+  // the NEXT person, and the loop then stamped our own, only answer as
+  // superseded. The row number comes from `save`, taken under the lock.
+  const doWiersza = naszWiersz || arkusz.getLastRow()
+  if (doWiersza < 4) return
 
-  const sesje = arkusz.getRange(3, kolSesja, ostatni - 2, 1).getValues()
-  for (let i = 0; i < sesje.length - 1; i++) {
+  const sesje = arkusz.getRange(3, kolSesja, doWiersza - 3, 1).getValues()
+  for (let i = 0; i < sesje.length; i++) {
     if (String(sesje[i][0]) === String(sesja)) {
       const komorka = arkusz.getRange(3 + i, kolKto)
       const obecne = String(komorka.getValue())
@@ -354,18 +411,26 @@ const SURVEY_COLUMNS = [
   ["pt-integracja::komentarz", "Jak oceniasz spotkanie integracyjne? [komentarz]"],
   ["pt-debata-otwarcia", "Jak oceniasz debatę otwierającą „Rewolucja świadomości: czy nasze decyzje naprawdę należą do nas?”"],
   ["pt-debata-otwarcia::komentarz", "Jak oceniasz debatę otwierającą „Rewolucja świadomości: czy nasze decyzje naprawdę należą do nas?” [komentarz]"],
-  ["pt-debata-otwarcia-kto", "Kto, Twoim zdaniem, wniósł najwięcej do debaty otwierającej?"],
+  ["pt-debata-otwarcia-kto::1", "Kto, Twoim zdaniem, wniósł najwięcej do debaty otwierającej? [1. miejsce]"],
+  ["pt-debata-otwarcia-kto::2", "Kto, Twoim zdaniem, wniósł najwięcej do debaty otwierającej? [2. miejsce]"],
+  ["pt-debata-otwarcia-kto::3", "Kto, Twoim zdaniem, wniósł najwięcej do debaty otwierającej? [3. miejsce]"],
   ["pt-koncert", "Jak oceniasz koncert Waldemara Malickiego?"],
   ["pt-koncert::komentarz", "Jak oceniasz koncert Waldemara Malickiego? [komentarz]"],
-  ["sb-debata1", "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć?”"],
-  ["sb-debata1::komentarz", "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć?” [komentarz]"],
-  ["sb-debata1-kto", "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty?"],
+  ["sb-debata1", "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć”"],
+  ["sb-debata1::komentarz", "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć” [komentarz]"],
+  ["sb-debata1-kto::1", "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty? [1. miejsce]"],
+  ["sb-debata1-kto::2", "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty? [2. miejsce]"],
+  ["sb-debata1-kto::3", "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty? [3. miejsce]"],
   ["sb-debata2", "2. debata: „Innowacje, które zmieniają świat”"],
   ["sb-debata2::komentarz", "2. debata: „Innowacje, które zmieniają świat” [komentarz]"],
-  ["sb-debata2-kto", "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty?"],
+  ["sb-debata2-kto::1", "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty? [1. miejsce]"],
+  ["sb-debata2-kto::2", "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty? [2. miejsce]"],
+  ["sb-debata2-kto::3", "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty? [3. miejsce]"],
   ["sb-debata3", "3. debata: „Na zakręcie geopolitycznym. Przywództwo w czasie przemian”"],
   ["sb-debata3::komentarz", "3. debata: „Na zakręcie geopolitycznym. Przywództwo w czasie przemian” [komentarz]"],
-  ["sb-debata3-kto", "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty?"],
+  ["sb-debata3-kto::1", "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty? [1. miejsce]"],
+  ["sb-debata3-kto::2", "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty? [2. miejsce]"],
+  ["sb-debata3-kto::3", "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty? [3. miejsce]"],
   ["sb-partnerstwo", "Rozmowa o książce „Partnerstwo” z Markiem Brzezińskim i Olgą Leonowicz"],
   ["sb-partnerstwo::komentarz", "Rozmowa o książce „Partnerstwo” z Markiem Brzezińskim i Olgą Leonowicz [komentarz]"],
   ["sb-debaty-uwagi", "Co najbardziej zapamiętasz z debat?"],
@@ -399,14 +464,31 @@ const SURVEY_COLUMNS = [
  * Normally a column is created on the first response that touches it — that
  * works fine, but until the first submission there's no way to see whether
  * the layout is correct. This function sets them all up at once, and along
- * the way fixes headers for questions whose text changed. It deletes
- * nothing: a column left over from a removed question is only listed in the
- * report — the decision is left to a human.
+ * the way fixes headers for questions whose text changed.
  *
- * Run manually from the Apps Script editor. Safe to run multiple times —
- * the second time there's simply nothing left to do.
+ * A column left over from a removed question is deleted only if it is
+ * completely empty. If it holds even one answer it stays and is listed in
+ * the report — throwing away collected data is left to a human.
+ *
+ * Run manually from the Apps Script editor, ideally BEFORE collecting
+ * answers. Safe to run multiple times — the second time there's simply
+ * nothing left to do.
+ *
+ * It takes the same lock as the writes: while columns are being moved
+ * around, a response written against the old layout would land one cell
+ * to the right of its headers, silently.
  */
 function prepareColumns() {
+  const lock = LockService.getScriptLock()
+  lock.waitLock(120000)
+  try {
+    return prepareColumnsLocked()
+  } finally {
+    lock.releaseLock()
+  }
+}
+
+function prepareColumnsLocked() {
   const arkusz = getSheet()
 
   // Row 1 holds identifiers, row 2 holds human-readable headers.
@@ -454,13 +536,16 @@ function prepareColumns() {
     opisy[i] = FIXED_COLUMNS[i]
   }
 
+  // Headers read back from the sheet come without their text-marker
+  // apostrophe, so a label that began with "=" would turn into a formula
+  // on the way back in. Through plainText they stay text.
   arkusz
     .getRange(1, 1, 1, idki.length)
-    .setValues([idki])
+    .setValues([idki.map(plainText)])
     .setFontColor('#999999')
   arkusz
     .getRange(2, 1, 1, opisy.length)
-    .setValues([opisy])
+    .setValues([opisy.map(plainText)])
     .setFontWeight('bold')
   arkusz.setFrozenRows(2)
   arkusz.hideRows(1)
@@ -471,9 +556,37 @@ function prepareColumns() {
       return para[0]
     }),
   )
-  const osierocone = idki.filter(function (id) {
-    return id !== '' && znane.indexOf(id) === -1
-  })
+  // Walked right to left, so a deletion never shifts a column still to be
+  // looked at. Data rows start at row 3; a column with none of them filled
+  // in is clutter, one with a single answer is somebody's data.
+  const ostatniWiersz = arkusz.getLastRow()
+  const usuniete = []
+  const osierocone = []
+  for (let k = idki.length - 1; k >= FIXED_COLUMNS.length; k--) {
+    const id = idki[k]
+    if (id === '' || znane.indexOf(id) !== -1) continue
+
+    let pusta = true
+    if (ostatniWiersz > 2) {
+      const wartosci = arkusz
+        .getRange(3, k + 1, ostatniWiersz - 2, 1)
+        .getValues()
+      for (let w = 0; w < wartosci.length; w++) {
+        if (String(wartosci[w][0]) !== '') {
+          pusta = false
+          break
+        }
+      }
+    }
+
+    if (pusta) {
+      arkusz.deleteColumn(k + 1)
+      idki.splice(k, 1)
+      usuniete.unshift(id)
+    } else {
+      osierocone.unshift(id)
+    }
+  }
 
   clearCache()
 
@@ -482,6 +595,7 @@ function prepareColumns() {
     'Kolumn w arkuszu:      ' + idki.length,
     'Zalozone teraz:        ' + (dodane.length ? dodane.join(', ') : 'brak'),
     'Poprawione naglowki:   ' + (poprawione.length ? poprawione.join(', ') : 'brak'),
+    'Usuniete puste:        ' + (usuniete.length ? usuniete.join(', ') : 'brak'),
     'Spoza ankiety:         ' + (osierocone.length ? osierocone.join(', ') : 'brak'),
   ].join('\n')
 
@@ -493,11 +607,14 @@ function prepareColumns() {
  * Clears the cached column list.
  *
  * The script keeps headers in cache for six hours, so it doesn't have to
- * read them on every write. After a manual change to the sheet — especially
- * deleting the "Odpowiedzi" tab — that cache is now stale.
- * Run this function once, and the next write will read the layout fresh.
+ * read them on every write. A deleted tab or a new spreadsheet is noticed
+ * automatically (the key names the tab), but columns deleted BY HAND inside
+ * the same tab are not. Run this once after such a change, and the next
+ * write reads the layout fresh.
  */
 function clearCache() {
-  CacheService.getScriptCache().remove(HEADERS_CACHE_KEY)
+  const cache = CacheService.getScriptCache()
+  cache.remove(headersCacheKey(getSheet()))
+  cache.remove('naglowki-v1') // key used by versions before October 2026
   Logger.log('Gotowe: skrypt zapomniał stary układ kolumn.')
 }

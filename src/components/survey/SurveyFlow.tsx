@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import ankietaJson from '@/data/ankieta.json'
-import type { Survey, Question, Section, Condition, Value } from '@/data/typy'
+import type { Survey, Question, Section, Value } from '@/data/typy'
 import {
   emptyState,
   loadState,
@@ -22,6 +22,11 @@ import {
   type SubmitStatus,
 } from '@/lib/submit'
 import { cn } from '@/lib/utils'
+import {
+  answersToDrop,
+  isQuestionVisible,
+  isSectionVisible,
+} from '@/lib/visibility'
 
 const ANKIETA = ankietaJson as Survey
 
@@ -43,29 +48,8 @@ const ANKIETA = ankietaJson as Survey
 /** Spring physics — one for the whole app (DESIGN.md §6). */
 const SPRING = { type: 'spring' as const, stiffness: 120, damping: 20 }
 
-/** Checks the `pokaz_jesli` condition — shared by sections and individual questions. */
-function isSatisfied(
-  w: Condition | undefined,
-  odpowiedzi: Record<string, Value>,
-): boolean {
-  if (!w) return true
-  const wartosc = odpowiedzi[w.pytanie]
-  if (w.rowne != null) return wartosc === w.rowne
-  if (w.zawiera != null)
-    return Array.isArray(wartosc) && wartosc.includes(w.zawiera)
-  if (w.rozne_od != null) {
-    // "Other than X" requires that an answer was actually given. Otherwise the
-    // dependent question would flicker before the parent answer is provided.
-    if (wartosc == null || wartosc === '') return false
-    return wartosc !== w.rozne_od
-  }
-  return true
-}
-
-/** Is the section visible given the current answers? */
-function isVisible(sekcja: Section, odpowiedzi: Record<string, Value>): boolean {
-  return isSatisfied(sekcja.pokaz_jesli, odpowiedzi)
-}
+// Which sections and questions are on screen is decided in one place,
+// src/lib/visibility.ts, shared with the closing summary and the submission.
 
 type Step = { rodzaj: 'intro' } | { rodzaj: 'sekcja'; index: number } | { rodzaj: 'koniec' }
 
@@ -167,6 +151,24 @@ export default function SurveyFlow() {
     submitConfigured ? 'gotowe' : 'brak-konfiguracji',
   )
 
+  /**
+   * A brand-new survey on this device gets a fresh session identifier.
+   *
+   * The identifier used to be forgotten right after a confirmed send. That
+   * broke a natural flow: going back from "Thank you" to fix one answer and
+   * finishing again sent the correction under a NEW identifier, so the
+   * sheet showed two unrelated respondents instead of one person with a
+   * superseded first row. Now the identifier lives until the next person
+   * starts from an empty survey — which is also the "phone passed on"
+   * case, since a confirmed send clears the stored answers.
+   */
+  useEffect(() => {
+    const s = loadState()
+    const nietknieta =
+      !s.intro.przedstawienie && Object.keys(s.odpowiedzi).length === 0
+    if (nietknieta) forgetSession()
+  }, [])
+
   // Pending sends (e.g. filled out with no signal) are retried on app start
   // and whenever the browser reports the connection is back.
   useEffect(() => {
@@ -217,7 +219,12 @@ export default function SurveyFlow() {
 
   useEffect(() => {
     if (zapisZablokowany.current) return
-    const id = window.setTimeout(() => saveState(stan), 400)
+    const id = window.setTimeout(() => {
+      // Checked again when the timer fires, not only when it was set: a send
+      // confirmed within these 400 ms has already cleared the storage, and
+      // this write would quietly put the answers back.
+      if (!zapisZablokowany.current) saveState(stan)
+    }, 400)
     return () => window.clearTimeout(id)
   }, [stan])
 
@@ -262,7 +269,7 @@ export default function SurveyFlow() {
   const sekcjaStartowa = ANKIETA.sekcje[0]
 
   const sekcje = useMemo(
-    () => ANKIETA.sekcje.slice(1).filter((s) => isVisible(s, stan.odpowiedzi)),
+    () => ANKIETA.sekcje.slice(1).filter((s) => isSectionVisible(s, stan.odpowiedzi)),
     [stan.odpowiedzi],
   )
 
@@ -297,6 +304,20 @@ export default function SurveyFlow() {
     }
   }
 
+  // "I did not attend" cancels "who contributed most": a question hidden by
+  // its own condition drops its answer, so the pick never reaches the sheet
+  // and does not reappear if the person un-marks the absence. Whole hidden
+  // sections keep their answers — see answersToDrop for the reasoning.
+  useEffect(() => {
+    const drop = answersToDrop(ANKIETA, stan.odpowiedzi)
+    if (drop.length === 0) return
+    setStan((s) => {
+      const odpowiedzi = { ...s.odpowiedzi }
+      for (const id of drop) delete odpowiedzi[id]
+      return { ...s, odpowiedzi }
+    })
+  }, [stan.odpowiedzi])
+
   const sekcjaRozpoczeta = (sekcja: Section) =>
     sekcja.pytania.some((p) => {
       const w = stan.odpowiedzi[p.id]
@@ -307,7 +328,7 @@ export default function SurveyFlow() {
     sekcja.pytania.filter((p) => {
       if (!p.wymagane) return false
       // A question hidden by a condition must not block finishing the survey.
-      if (!isSatisfied(p.pokaz_jesli, stan.odpowiedzi)) return false
+      if (!isQuestionVisible(p, stan.odpowiedzi)) return false
       const w = stan.odpowiedzi[p.id]
       return w == null || w === '' || (Array.isArray(w) && w.length === 0)
     })
@@ -531,7 +552,33 @@ export default function SurveyFlow() {
 
     zapisZablokowany.current = true
     clearState()
-    forgetSession()
+    // The session identifier is deliberately kept — see the effect near the
+    // top that forgets it on a fresh start. Going back from this screen to
+    // fix one answer and finishing again must still count as the same
+    // person, so the earlier row gets its "superseded" mark.
+  }, [krok.rodzaj, status])
+
+  /**
+   * AUTOMATIC RETRIES ON THE FINAL SCREEN
+   * =====================================
+   * While this screen stays open after a failed send, the app keeps trying
+   * on its own at growing intervals: 15 s, 30 s, 60 s, then every 2 min.
+   * The rush that causes such failures — everyone submitting in the same
+   * minute — passes quickly, so a participant who simply leaves the page
+   * open gets their answers through without touching anything. "Spróbuj
+   * teraz" still works at any moment, and a page closed in the meantime
+   * keeps the answers in its queue for the next visit.
+   */
+  const ponowienia = useRef(0)
+  useEffect(() => {
+    if (status === 'wyslano') ponowienia.current = 0
+    if (krok.rodzaj !== 'koniec' || status !== 'blad') return
+    const odstep = Math.min(15000 * 2 ** ponowienia.current, 120000)
+    const id = window.setTimeout(() => {
+      ponowienia.current += 1
+      void wyslij()
+    }, odstep)
+    return () => window.clearTimeout(id)
   }, [krok.rodzaj, status])
 
   /**
@@ -709,7 +756,7 @@ export default function SurveyFlow() {
                   the choice above. Previously a separate "Your attendance" page. */}
               <div className="mt-7 flex flex-col gap-3.5">
                 {sekcjaStartowa.pytania
-                  .filter((q) => isSatisfied(q.pokaz_jesli, stan.odpowiedzi))
+                  .filter((q) => isQuestionVisible(q, stan.odpowiedzi))
                   .map((q) => (
                     <div
                       key={q.id}
@@ -777,7 +824,7 @@ export default function SurveyFlow() {
                   ask about the jury score someone who wasn't at the final). */}
               <div className="mt-6 flex flex-col gap-3.5">
                 {sekcje[krok.index].pytania
-                  .filter((p) => isSatisfied(p.pokaz_jesli, stan.odpowiedzi))
+                  .filter((p) => isQuestionVisible(p, stan.odpowiedzi))
                   .map((p, i) => (
                   <motion.div
                     key={p.id}
@@ -897,8 +944,9 @@ export default function SurveyFlow() {
                     {status === 'blad' && (
                       <div className="rounded-md border border-[#C9A14A]/40 bg-[#FBF3DF] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-[#8A6A1E]">
                         Nie udało się teraz wysłać. Odpowiedzi są bezpieczne na
-                        tym urządzeniu i wyślemy je automatycznie, gdy tylko się
-                        uda. Możesz spokojnie zamknąć stronę.
+                        tym urządzeniu. Zostaw tę stronę otwartą — spróbujemy
+                        ponownie za chwilę. Jeśli ją zamkniesz, wyślemy je, gdy
+                        następnym razem otworzysz ankietę.
                         <button
                           type="button"
                           onClick={() => void wyslij()}

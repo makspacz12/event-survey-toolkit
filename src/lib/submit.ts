@@ -1,7 +1,9 @@
 import ankietaJson from '@/data/ankieta.json'
 import type { Survey } from '@/data/typy'
 import type { SurveyState } from '@/lib/storage'
-import { NIEOBECNY } from '@/components/survey/AnswerWidgets'
+import { NIEOBECNY, absentLabelFor } from '@/components/survey/AnswerWidgets'
+import { cleanRanking } from '@/lib/ranking'
+import { visibleQuestionIds } from '@/lib/visibility'
 
 /**
  * SUBMITTING ANSWERS TO THE GOOGLE SHEET
@@ -26,7 +28,7 @@ const URL = import.meta.env.VITE_ARKUSZ_URL as string | undefined
 const TOKEN = import.meta.env.VITE_ARKUSZ_TOKEN as string | undefined
 
 /** Survey content version — makes it easier to tell answers apart after questions change. */
-const VERSION = '2026-08-13'
+const VERSION = '2026-10-12'
 
 const QUEUE_KEY = 'ctn-kolejka-wysylki-v1'
 const SESSION_KEY = 'ctn-sesja-v1'
@@ -70,11 +72,10 @@ function sessionId(): string {
  * Forgets the current identifier, so the next submission on this device
  * counts as a separate answer.
  *
- * We call this after a confirmed submission, together with clearing the
- * answers. This is NECESSARY, not cosmetic: if the identifier stayed and
- * someone else then filled in the survey (one phone passed around), the
- * script would treat their answers as a correction of the previous ones and
- * mark the first person's row as stale.
+ * Called when a survey starts from an empty state (the previous person's
+ * answers are gone after a confirmed send), NOT right after that send: a
+ * participant who goes back from the final screen to fix one answer and
+ * finishes again must still be recognised as the same person.
  */
 export function forgetSession() {
   try {
@@ -85,9 +86,9 @@ export function forgetSession() {
 }
 
 /** Turns a value into text readable in the sheet. */
-function readable(v: unknown): string {
+function readable(v: unknown, absent: string): string {
   if (v == null || v === '') return ''
-  if (v === NIEOBECNY) return 'nie było mnie'
+  if (v === NIEOBECNY) return absent
   if (Array.isArray(v)) return v.join('; ')
   if (v === 'tak') return 'Tak'
   if (v === 'nie') return 'Nie'
@@ -104,14 +105,47 @@ function buildPayload(state: SurveyState) {
   // so skipping empty values would push comments to the end of the sheet,
   // away from the questions they belong to. Empty fields cost nothing, and
   // the column layout then matches the survey's layout.
+  // Only what the participant could see counts. A Friday rating given before
+  // the person changed the attendance answer to "Nie", or a speaker picked
+  // before the debate was marked "did not attend", is sent as blank — the
+  // key still goes, the value does not.
+  const visible = visibleQuestionIds(SURVEY, state.odpowiedzi)
+
   for (const sekcja of SURVEY.sekcje) {
     for (const p of sekcja.pytania) {
-      odpowiedzi[p.id] = readable(state.odpowiedzi[p.id])
-      etykiety[p.id] = p.tresc
+      const shown = visible.has(p.id)
+      const absent = absentLabelFor(p)
+      /* A ranking gets ONE COLUMN PER PLACE, not one column holding
+       * "A; B; C".
+       *
+       * The order is the answer here, and a single joined cell hides it
+       * behind text splitting: counting first places would mean parsing every
+       * row. One column per place makes it a COUNTIF. The suffixed key and the
+       * decorated header follow the convention comments already use, so the
+       * sheet keeps one shape.
+       *
+       * Empty places are still sent, for the same reason every other empty
+       * answer is: a column appears on its first occurrence, so a place left
+       * blank by the first respondent must not move the later columns. */
+      if (p.typ === 'ranking') {
+        const miejsca = p.max ?? 3
+        // The same cleaning the widget applies, so what is sent is what was
+        // on screen even if the cached answer predates a change to the list.
+        const lista = shown
+          ? cleanRanking(state.odpowiedzi[p.id], p.opcje ?? [], miejsca)
+          : []
+        for (let i = 0; i < miejsca; i += 1) {
+          odpowiedzi[`${p.id}::${i + 1}`] = readable(lista[i], absent)
+          etykiety[`${p.id}::${i + 1}`] = `${p.tresc} [${i + 1}. miejsce]`
+        }
+      } else {
+        odpowiedzi[p.id] = shown ? readable(state.odpowiedzi[p.id], absent) : ''
+        etykiety[p.id] = p.tresc
+      }
 
       if (p.komentarz) {
         const kom = state.odpowiedzi[`${p.id}::komentarz`]
-        odpowiedzi[`${p.id}::komentarz`] = typeof kom === 'string' ? kom : ''
+        odpowiedzi[`${p.id}::komentarz`] = shown && typeof kom === 'string' ? kom : ''
         etykiety[`${p.id}::komentarz`] = `${p.tresc} [komentarz]`
       }
     }

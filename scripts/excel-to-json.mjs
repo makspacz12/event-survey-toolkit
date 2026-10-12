@@ -18,7 +18,7 @@ const DIR = join(__dirname, '..')
 const SOURCE = join(DIR, 'ankieta.xlsx')
 const TARGET = join(DIR, 'src', 'data', 'ankieta.json')
 
-const TYPES = ['skala', 'tak_nie', 'jeden_wybor', 'wiele_wyborow', 'tekst']
+const TYPES = ['skala', 'tak_nie', 'jeden_wybor', 'wiele_wyborow', 'ranking', 'tekst']
 
 if (!existsSync(SOURCE)) {
   console.error(`ERROR: file not found ${SOURCE}`)
@@ -87,7 +87,10 @@ rows.forEach((w, i) => {
   const optionTexts = split(w['Opcje (oddziel |)'])
   const optionPhotos = splitKeepingEmpty(w['Zdjęcia opcji (oddziel |)'])
 
-  if ((type === 'jeden_wybor' || type === 'wiele_wyborow') && optionTexts.length === 0)
+  if (
+    (type === 'jeden_wybor' || type === 'wiele_wyborow' || type === 'ranking') &&
+    optionTexts.length === 0
+  )
     errors.push(`row ${rowNr}: type "${type}" requires a list of options`)
   if (optionPhotos.length > 0 && optionPhotos.length !== optionTexts.length)
     warnings.push(
@@ -137,6 +140,21 @@ rows.forEach((w, i) => {
     }
   }
 
+  // The opposite gate: hide a question once a condition holds (e.g. "who
+  // contributed most" disappears when the debate is marked as not attended).
+  // Without this column the round trip through Excel silently dropped it.
+  let hideQuestionIf
+  const rawHide = text(w['Ukryj pytanie gdy'])
+  if (rawHide) {
+    try {
+      hideQuestionIf = JSON.parse(rawHide)
+    } catch {
+      errors.push(
+        `row ${rowNr}: "Ukryj pytanie gdy" is not valid JSON: ${rawHide}`,
+      )
+    }
+  }
+
   const min = numberOrUndefined(w['Min'])
   const max = numberOrUndefined(w['Max'])
   if (type === 'skala' && (min === undefined || max === undefined))
@@ -159,6 +177,7 @@ rows.forEach((w, i) => {
     ...(boolYes(w['Komentarz (tak/nie)']) ? { komentarz: true } : {}),
     ...(text(w['Zdjęcie pytania']) ? { zdjecie: text(w['Zdjęcie pytania']) } : {}),
     ...(showQuestionIf ? { pokaz_jesli: showQuestionIf } : {}),
+    ...(hideQuestionIf ? { ukryj_jesli: hideQuestionIf } : {}),
     ...(text(w['Podpowiedź']) ? { placeholder: text(w['Podpowiedź']) } : {}),
   })
 })

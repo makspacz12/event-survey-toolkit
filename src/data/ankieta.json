@@ -39,6 +39,7 @@
           "min": 1,
           "max": 10,
           "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie byłem(-am) na spotkaniu",
           "zdjecie": "/prelegenci/robot-barbara.jpg",
           "komentarz": true
         },
@@ -53,8 +54,12 @@
         },
         {
           "id": "pt-debata-otwarcia-kto",
-          "typ": "jeden_wybor",
+          "typ": "ranking",
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do debaty otwierającej?",
+          "ukryj_jesli": {
+            "pytanie": "pt-debata-otwarcia",
+            "rowne": "nieobecny"
+          },
           "opcje": [
             {
               "tekst": "dr Paweł Boguszewski",
@@ -81,6 +86,7 @@
           "min": 1,
           "max": 10,
           "nieobecnosc": true,
+          "nieobecnosc_tekst": "Nie byłem(-am) na koncercie",
           "zdjecie": "/prelegenci/waldemar-malicki.jpg",
           "komentarz": true
         }
@@ -99,7 +105,7 @@
         {
           "id": "sb-debata1",
           "typ": "skala",
-          "tresc": "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć?”",
+          "tresc": "1. debata: „Człowiek w epoce przełomu. O jakim świecie warto marzyć”",
           "min": 1,
           "max": 10,
           "nieobecnosc": true,
@@ -107,8 +113,12 @@
         },
         {
           "id": "sb-debata1-kto",
-          "typ": "jeden_wybor",
+          "typ": "ranking",
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 1. debaty?",
+          "ukryj_jesli": {
+            "pytanie": "sb-debata1",
+            "rowne": "nieobecny"
+          },
           "opcje": [
             {
               "tekst": "Krzysztof Zanussi",
@@ -143,12 +153,16 @@
         },
         {
           "id": "sb-debata2-kto",
-          "typ": "jeden_wybor",
+          "typ": "ranking",
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 2. debaty?",
+          "ukryj_jesli": {
+            "pytanie": "sb-debata2",
+            "rowne": "nieobecny"
+          },
           "opcje": [
             {
-              "tekst": "Artur Chmielewski",
-              "zdjecie": "/prelegenci/artur-chmielewski.jpg"
+              "tekst": "Sławosz Uznański-Wiśniewski",
+              "zdjecie": "/prelegenci/slawosz-uznanski-wisniewski.jpg"
             },
             {
               "tekst": "Aleksander Kutela",
@@ -179,8 +193,12 @@
         },
         {
           "id": "sb-debata3-kto",
-          "typ": "jeden_wybor",
+          "typ": "ranking",
           "tresc": "Kto, Twoim zdaniem, wniósł najwięcej do 3. debaty?",
+          "ukryj_jesli": {
+            "pytanie": "sb-debata3",
+            "rowne": "nieobecny"
+          },
           "opcje": [
             {
               "tekst": "kard. Grzegorz Ryś",

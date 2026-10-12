@@ -2,8 +2,8 @@
  * TEST OF THE APPS SCRIPT LOGIC — without Google, on this machine.
  *
  * Substitutes fakes for Google's objects (SpreadsheetApp, LockService,
- * Utilities…) and runs the real code from apps-script/Kod.gs against a fake
- * sheet. This way logic bugs surface here, not after deployment.
+ * Utilities…) — see scripts/lib/fake-google.mjs — and runs the real code
+ * from apps-script/Kod.gs against a fake sheet. This way logic bugs surface here, not after deployment.
  *
  * Run:  npm run test:script
  */
@@ -14,153 +14,28 @@ import { dirname, join } from 'node:path'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CODE = join(__dirname, '..', 'apps-script', 'Kod.gs')
 
-/* -------------------------------------------------- fake Google sheet --- */
-
-function createSheet(name) {
-  const data = [] // array of rows, each an array of cells
-  let frozen = 0
-  const hidden = []
-
-  const cell = (r, c) => {
-    while (data.length < r) data.push([])
-    const row = data[r - 1]
-    while (row.length < c) row.push('')
-    return row
-  }
-
-  return {
-    name,
-    data,
-    _state: () => ({ frozen, hidden }),
-    getName: () => name,
-    getLastRow: () => data.length,
-    getLastColumn: () => data.reduce((m, w) => Math.max(m, w.length), 0),
-    appendRow: (row) => data.push([...row]),
-    setFrozenRows: (n) => {
-      frozen = n
-    },
-    hideRows: (n) => hidden.push(n),
-    getRange: (r, c, rowCount = 1, colCount = 1) => ({
-      getValues: () => {
-        const result = []
-        for (let i = 0; i < rowCount; i++) {
-          const row = []
-          for (let j = 0; j < colCount; j++) {
-            const src = data[r - 1 + i] || []
-            row.push(src[c - 1 + j] === undefined ? '' : src[c - 1 + j])
-          }
-          result.push(row)
-        }
-        return result
-      },
-      getValue: () => {
-        const src = data[r - 1] || []
-        return src[c - 1] === undefined ? '' : src[c - 1]
-      },
-      setValue: function (v) {
-        const row = cell(r, c)
-        row[c - 1] = v
-        return this // allows chaining .setFontColor()
-      },
-      // Writes a whole row at once — that's how `prepareColumns` does it,
-      // because at 48 columns individual setValue calls would be 48 round
-      // trips to Google.
-      setValues: function (matrix) {
-        matrix.forEach((row, i) => {
-          row.forEach((v, j) => {
-            const dst = cell(r + i, c + j)
-            dst[c - 1 + j] = v
-          })
-        })
-        return this
-      },
-      setFontColor: function () {
-        return this
-      },
-      setFontWeight: function () {
-        return this
-      },
-    }),
-  }
-}
-
-function createFile() {
-  const tabs = new Map()
-  return {
-    tabs,
-    getSheetByName: (n) => tabs.get(n) || null,
-    insertSheet: (n) => {
-      const a = createSheet(n)
-      tabs.set(n, a)
-      return a
-    },
-  }
-}
+import {
+  createEnvironment,
+  createFile,
+  createSheet,
+  loadScript,
+} from './lib/fake-google.mjs'
 
 /* ------------------------------------------------------ Google environment --- */
 
-const file = createFile()
-let consoleErrors = []
-let cache = {}
-let loggerEntries = []
-
-const environment = {
-  SpreadsheetApp: {
-    // Default path from the instructions: the script was created from
-    // inside the sheet (Extensions → Apps Script), so it's bound to it and
-    // the SPREADSHEET_ID constant stays empty. A separate test below checks the
-    // other path, i.e. a standalone project with the ID filled in.
-    openById: () => file,
-    getActiveSpreadsheet: () => file,
-  },
-  LockService: {
-    // `tryLock` returns true/false instead of throwing — the script relies
-    // on this version so that under contention it responds with an error
-    // instead of crashing.
-    getScriptLock: () => ({
-      tryLock: () => true,
-      waitLock: () => {},
-      releaseLock: () => {},
-    }),
-  },
-  // Header cache. The fake has to behave like the real thing: keep a value
-  // between calls, since that's the whole point of the savings we're testing.
-  CacheService: {
-    getScriptCache: () => ({
-      get: (k) => (k in cache ? cache[k] : null),
-      put: (k, v) => {
-        cache[k] = v
-      },
-      remove: (k) => {
-        delete cache[k]
-      },
-    }),
-  },
-  Utilities: {
-    formatDate: () => '2026-10-18 19:12:04',
-  },
-  ContentService: {
-    MimeType: { JSON: 'json' },
-    createTextOutput: (t) => ({ setMimeType: () => ({ tresc: t }) }),
-  },
-  console: {
-    log: () => {},
-    error: (m) => consoleErrors.push(String(m)),
-  },
-  Logger: {
-    log: (m) => loggerEntries.push(String(m)),
-  },
-}
+// One holder for everything the fakes remember between calls. A test below
+// resets the cache by assigning a fresh object, so the environment reads it
+// through the holder every time instead of closing over the first one.
+const holder = { file: createFile(), cache: {}, consoleErrors: [], loggerEntries: [] }
+const file = holder.file
+const environment = createEnvironment(holder)
 
 // Run the real script code inside the prepared environment.
 const source = readFileSync(CODE, 'utf8')
-const names = Object.keys(environment)
-const values = Object.values(environment)
-const factory = new Function(
-  ...names,
-  `${source}\n;return { doPost, testSave, prepareColumns, clearCache, SHEET_NAME, TOKEN, FIXED_COLUMNS, SURVEY_COLUMNS };`,
-)
-const script = factory(...values)
+const { factory, script } = loadScript(source, environment, [
+  'doPost', 'testSave', 'prepareColumns', 'clearCache', 'markPrevious',
+  'SHEET_NAME', 'TOKEN', 'FIXED_COLUMNS', 'SURVEY_COLUMNS',
+])
 
 /* ------------------------------------------------------------- tests --- */
 
@@ -279,7 +154,7 @@ check('ale nic nie zapisano', sheet.data.length === 6)
 
 /* 7. Running doPost manually from the editor */
 console.log('\n7. Ręczne uruchomienie doPost z edytora')
-consoleErrors = []
+holder.consoleErrors = []
 const manual = result(script.doPost(undefined))
 check('zwraca błąd zamiast się wysypać', manual.ok === false)
 check(
@@ -294,28 +169,28 @@ script.testSave()
 check('dopisała wiersz', sheet.data.length === 7)
 check('oznaczony jako testowy', String(sheet.data[6][2]).includes('TEST'))
 
-/* 9. Header cache */
+/* 9. Header holder.cache */
 console.log('\n9. Pamięć podręczna nagłówków')
 check(
   'nagłówki wylądowały w pamięci podręcznej',
-  Object.keys(cache).length > 0,
-  Object.keys(cache).join(', '),
+  Object.keys(holder.cache).length > 0,
+  Object.keys(holder.cache).join(', '),
 )
-const cached = JSON.parse(Object.values(cache)[0] || '[]')
+const cached = JSON.parse(Object.values(holder.cache)[0] || '[]')
 check(
   'zapamiętana lista zgadza się z arkuszem',
   cached.length === sheet.data[0].length && cached[4] === 'nps',
   `${cached.length} vs ${sheet.data[0].length}`,
 )
-// The nastiest cache bug: a stale list after a column was appended. We swap
+// The nastiest holder.cache bug: a stale list after a column was appended. We swap
 // in a shortened list and check whether the script detects it and still
 // writes the answer to the right columns anyway.
-const cacheKey = Object.keys(cache)[0]
-cache[cacheKey] = JSON.stringify(cached.slice(0, 3))
+const cacheKey = Object.keys(holder.cache)[0]
+holder.cache[cacheKey] = JSON.stringify(cached.slice(0, 3))
 const afterStale = result(
   post({
     token: script.TOKEN,
-    sesja: 'sesja-cache',
+    sesja: 'sesja-holder.cache',
     kto: 'anonimowo',
     odpowiedzi: { nps: '4', 'org-jedzenie': '4' },
     etykiety: { nps: 'Polecisz znajomemu?', 'org-jedzenie': 'Jak oceniasz jedzenie?' },
@@ -356,7 +231,7 @@ const standaloneScript = new Function(
   ...Object.keys(standaloneEnvironment),
   `${sourceWithId}\n;return { doPost, SHEET_NAME };`,
 )(...Object.values(standaloneEnvironment))
-cache = {}
+holder.cache = {}
 const standalone = result(
   standaloneScript.doPost({
     postData: {
@@ -446,9 +321,15 @@ console.log('\n13. Zmieniona treść pytania i kolumna po skasowanym pytaniu')
 const firstQuestion = columnsScript.SURVEY_COLUMNS[0][0]
 const firstQuestionCol = columnsSheet.data[0].indexOf(firstQuestion)
 columnsSheet.data[1][firstQuestionCol] = 'STARA TREŚĆ PYTANIA'
-// Add a column after a question that no longer exists in the survey.
-columnsSheet.data[0].push('nps')
-columnsSheet.data[1].push('Na ile prawdopodobne, że polecisz…')
+// Two columns left over from questions that no longer exist: one that
+// already collected an answer, one that never did.
+columnsSheet.data[0].push('nps', 'fn-jury')
+columnsSheet.data[1].push('Na ile prawdopodobne, że polecisz…', 'Czy sposób oceniania…')
+const npsCol = columnsSheet.data[0].indexOf('nps')
+const rowWithAnswer = []
+rowWithAnswer[npsCol] = 9
+columnsSheet.data.push(rowWithAnswer)
+const widthBeforeCleanup = columnsSheet.data[0].length
 
 const report3 = columnsScript.prepareColumns()
 check(
@@ -461,8 +342,25 @@ check(
   report3.includes('Spoza ankiety:         nps'),
 )
 check(
-  'kolumna spoza ankiety NIE została usunięta',
+  'kolumna z odpowiedziami NIE została usunięta',
   columnsSheet.data[0].indexOf('nps') !== -1,
+)
+check(
+  'jej odpowiedź została na miejscu',
+  columnsSheet.data[2][columnsSheet.data[0].indexOf('nps')] === 9,
+)
+check(
+  'pusta kolumna po skasowanym pytaniu zniknęła',
+  columnsSheet.data[0].indexOf('fn-jury') === -1,
+)
+check(
+  'raport wypisał usuniętą kolumnę',
+  report3.includes('Usuniete puste:        fn-jury'),
+)
+check(
+  'arkusz zwęził się dokładnie o jedną kolumnę',
+  columnsSheet.data[0].length === widthBeforeCleanup - 1,
+  `${widthBeforeCleanup} → ${columnsSheet.data[0].length}`,
 )
 
 /* 14. After setting up columns, a submission lands in existing ones, adds none */
@@ -518,7 +416,17 @@ const surveySource = JSON.parse(
 const expected = []
 for (const section of surveySource.sekcje) {
   for (const question of section.pytania) {
-    expected.push([question.id, question.tresc])
+    // A ranking is one column per place (see buildPayload in submit.ts).
+    if (question.typ === 'ranking') {
+      for (let place = 1; place <= (question.max ?? 3); place += 1) {
+        expected.push([
+          `${question.id}::${place}`,
+          `${question.tresc} [${place}. miejsce]`,
+        ])
+      }
+    } else {
+      expected.push([question.id, question.tresc])
+    }
     if (question.komentarz) {
       expected.push([
         `${question.id}::komentarz`,
@@ -551,6 +459,175 @@ check(
   duplicates.length === 0,
   duplicates.join(', '),
 )
+
+/* 16. The tab is deleted while the holder.cache is warm */
+console.log('\n16. Usunięta zakładka „Odpowiedzi” przy ciepłej pamięci podręcznej')
+const file16 = createFile()
+const script16 = factory(
+  ...Object.values({ ...environment, SpreadsheetApp: {
+    openById: () => file16,
+    getActiveSpreadsheet: () => file16,
+  } }),
+)
+const fullSubmission = (nr) => {
+  const odpowiedzi = {}
+  const etykiety = {}
+  script16.SURVEY_COLUMNS.forEach(([id, label]) => {
+    odpowiedzi[id] = `odp-${nr}`
+    etykiety[id] = label
+  })
+  return { token: script16.TOKEN, sesja: `sesja-${nr}`, kto: 'anonimowo', wersja: 'x', pulapka: '', odpowiedzi, etykiety }
+}
+// The first response builds the tab and warms the holder.cache with its layout.
+script16.doPost({ postData: { contents: JSON.stringify(fullSubmission(1)) } })
+const widthBeforeDelete = file16.tabs.get(script16.SHEET_NAME).data[0].length
+check('pierwsza odpowiedź zbudowała komplet kolumn', widthBeforeDelete === 4 + script16.SURVEY_COLUMNS.length)
+// Someone deletes the tab. The holder.cache still remembers all those columns.
+file16.tabs.delete(script16.SHEET_NAME)
+const afterDelete = JSON.parse(
+  script16.doPost({ postData: { contents: JSON.stringify(fullSubmission(2)) } }).tresc,
+)
+const rebuilt = file16.tabs.get(script16.SHEET_NAME)
+check('odpowiedź przyjęta po odtworzeniu zakładki', afterDelete.ok === true, JSON.stringify(afterDelete))
+check(
+  'odtworzona zakładka ma komplet kolumn, każda z nagłówkiem',
+  rebuilt.data[0].length === widthBeforeDelete &&
+    rebuilt.data[1].filter((v) => v !== '').length === widthBeforeDelete,
+  `${rebuilt.data[0].length} kolumn, ${rebuilt.data[1].filter((v) => v !== '').length} nagłówków`,
+)
+check(
+  'każda wartość leży pod swoją kolumną, nie pod widmem starej',
+  script16.SURVEY_COLUMNS.every(([id]) => rebuilt.data[2][rebuilt.data[0].indexOf(id)] === 'odp-2'),
+)
+
+/* 17. A new spreadsheet does not inherit the old one's cached layout */
+console.log('\n17. Nowy arkusz nie dziedziczy pamięci podręcznej starego')
+const file17 = createFile()
+const script17 = factory(
+  ...Object.values({ ...environment, SpreadsheetApp: {
+    openById: () => file17,
+    getActiveSpreadsheet: () => file17,
+  } }),
+)
+const only3 = JSON.parse(
+  script17.doPost({
+    postData: {
+      contents: JSON.stringify({
+        token: script17.TOKEN, sesja: 'nowy-1', kto: 'anonimowo', wersja: 'x', pulapka: '',
+        odpowiedzi: { 'org-jedzenie': '7', 'org-miejsce': '9' },
+        etykiety: { 'org-jedzenie': 'Jedzenie', 'org-miejsce': 'Miejsce' },
+      }),
+    },
+  }).tresc,
+)
+const sheet17 = file17.tabs.get(script17.SHEET_NAME)
+check('zapis do nowego arkusza przyjęty', only3.ok === true)
+check(
+  'nowy arkusz ma tylko swoje kolumny, nie 54 z poprzedniego',
+  sheet17.data[0].length === 6,
+  `${sheet17.data[0].length} kolumn: ${sheet17.data[0].join(', ')}`,
+)
+check(
+  'wartości pod właściwymi nagłówkami',
+  sheet17.data[2][sheet17.data[0].indexOf('org-jedzenie')] === '7' &&
+    sheet17.data[2][sheet17.data[0].indexOf('org-miejsce')] === '9',
+)
+
+/* 18. clearCache forgets the current tab's layout */
+console.log('\n18. clearCache zapomina układ bieżącej zakładki')
+const keysBefore = Object.keys(holder.cache).length
+script17.clearCache()
+check('wpis dla bieżącej zakładki usunięty', Object.keys(holder.cache).length === keysBefore - 1, `${keysBefore} → ${Object.keys(holder.cache).length}`)
+
+/* 19. A participant's text never becomes a formula in the organiser's sheet */
+console.log('\n19. Tekst uczestnika nigdy nie staje się formułą')
+const file19 = createFile()
+const script19 = factory(
+  ...Object.values({ ...environment, SpreadsheetApp: {
+    openById: () => file19,
+    getActiveSpreadsheet: () => file19,
+  } }),
+)
+const injected = {
+  'org-jedzenie': '7',
+  'org-jedzenie::komentarz': '=HYPERLINK("http://zly.example";"kliknij")',
+  'org-miejsce': '-5',
+  'org-miejsce::komentarz': '+1+1',
+  'pod-wrazenie': '-1+1',
+  'pod-wartosc-i-poprawa': '@IMPORT',
+  'pod-wlasnymi-slowami': '  =SUMA(A1:A9)',
+  'sb-debaty-uwagi': "'cytat w apostrofach'",
+}
+const r19 = JSON.parse(
+  script19.doPost({
+    postData: {
+      contents: JSON.stringify({
+        token: script19.TOKEN, sesja: 'inj-1', kto: '=1+1', wersja: 'x', pulapka: '',
+        odpowiedzi: injected,
+        etykiety: Object.fromEntries(Object.keys(injected).map((k) => [k, k === 'org-jedzenie' ? '=zla etykieta' : k])),
+      }),
+    },
+  }).tresc,
+)
+const sheet19 = file19.tabs.get(script19.SHEET_NAME)
+const row19 = sheet19.data[2]
+const cell19 = (id) => row19[sheet19.data[0].indexOf(id)]
+check('zapis przyjęty', r19.ok === true, JSON.stringify(r19))
+check(
+  'żadna komórka wiersza nie jest formułą',
+  row19.every((v) => typeof v !== 'object'),
+  JSON.stringify(row19.filter((v) => typeof v === 'object')),
+)
+check('komentarz z „=” trafia do arkusza jako tekst, bez zmian', cell19('org-jedzenie::komentarz') === injected['org-jedzenie::komentarz'])
+check('imię zaczynające się od „=” zostaje tekstem', cell19('Kto wypełnił') === '=1+1')
+check('„+1+1” i „-1+1” zostają tekstem', cell19('org-miejsce::komentarz') === '+1+1' && cell19('pod-wrazenie') === '-1+1')
+check('„@” na początku zostaje tekstem', cell19('pod-wartosc-i-poprawa') === '@IMPORT')
+check('spacje przed „=” nie omijają zabezpieczenia', cell19('pod-wlasnymi-slowami') === '  =SUMA(A1:A9)')
+check('ocena „7” i liczba „-5” nie dostają apostrofu (liczby zostają liczbami)', cell19('org-jedzenie') === '7' && cell19('org-miejsce') === '-5')
+check('etykieta nagłówka z „=” też zostaje tekstem', typeof sheet19.data[1][sheet19.data[0].indexOf('org-jedzenie')] === 'string')
+check('apostrof na początku wypowiedzi nie znika', cell19('sb-debaty-uwagi') === "'cytat w apostrofach'", String(cell19('sb-debaty-uwagi')))
+
+/* 20. Under load, marking earlier submissions must never touch somebody else's — or our own — row */
+console.log('\n20. Oznaczanie poprzednich wpisów przy równoczesnych wysyłkach')
+const file20 = createFile()
+const script20 = factory(
+  ...Object.values({ ...environment, SpreadsheetApp: {
+    openById: () => file20,
+    getActiveSpreadsheet: () => file20,
+  } }),
+)
+const send20 = (sesja, kto) =>
+  JSON.parse(script20.doPost({ postData: { contents: JSON.stringify({
+    token: script20.TOKEN, sesja, kto, wersja: 'x', pulapka: '',
+    odpowiedzi: { 'org-jedzenie': '5' }, etykiety: { 'org-jedzenie': 'Jedzenie' },
+  }) } }).tresc)
+send20('sesja-A', 'Ala')
+send20('sesja-B', 'Bartek')
+const sheet20 = file20.tabs.get(script20.SHEET_NAME)
+const kto20 = () => sheet20.data.slice(2).map((w) => w[2])
+// The situation the lock cannot prevent: A's row is written, the lock is
+// released, B's row lands underneath, and only THEN A's marking runs.
+script20.markPrevious(sheet20, 'sesja-A', 3)
+check('własny wiersz nie dostaje dopisku, choć pod nim leży już cudzy', kto20()[0] === 'Ala', JSON.stringify(kto20()))
+check('cudzy wiersz nietknięty', kto20()[1] === 'Bartek')
+send20('sesja-A', 'Ala')
+check('prawdziwa poprawka: starszy wiersz tej samej osoby oznaczony', kto20()[0] === '[nieaktualne] Ala', JSON.stringify(kto20()))
+check('najnowszy wiersz tej osoby czysty', kto20()[2] === 'Ala')
+check('wiersz innej osoby wciąż nietknięty', kto20()[1] === 'Bartek')
+
+/* 21. prepareColumns re-writes headers as text, even ones that look like formulas */
+console.log('\n21. prepareColumns przepisuje nagłówki jako tekst')
+const r21 = JSON.parse(script20.doPost({ postData: { contents: JSON.stringify({
+  token: script20.TOKEN, sesja: 'sesja-C', kto: 'anonimowo', wersja: 'x', pulapka: '',
+  odpowiedzi: { 'org-jedzenie': '6', '=zly-id': 'x' },
+  etykiety: { 'org-jedzenie': 'Jedzenie', '=zly-id': '=IMPORTRANGE("x")' },
+}) } }).tresc)
+check('odpowiedź z podejrzanym identyfikatorem przyjęta', r21.ok === true)
+script20.prepareColumns()
+const col21 = sheet20.data[0].indexOf('=zly-id')
+check('osierocona kolumna z danymi została (nie skasowano cudzych danych)', col21 !== -1, JSON.stringify(sheet20.data[0]))
+check('po prepareColumns żaden nagłówek nie jest formułą', sheet20.data[0].every((v) => typeof v === 'string') && sheet20.data[1].every((v) => typeof v === 'string'), JSON.stringify([sheet20.data[0][col21], sheet20.data[1][col21]]))
+check('treść podejrzanego nagłówka zachowana jako tekst', sheet20.data[1][col21] === '=IMPORTRANGE("x")')
 
 /* ------------------------------------------------------------- summary --- */
 

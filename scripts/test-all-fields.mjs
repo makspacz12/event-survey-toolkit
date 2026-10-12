@@ -42,7 +42,11 @@ function fromEnv() {
     const m = content.match(new RegExp(`^${key}=(.*)$`, 'm'))
     return m ? m[1].trim() : ''
   }
-  return { url: get('VITE_ARKUSZ_URL'), token: get('VITE_ARKUSZ_TOKEN') }
+  // ARKUSZ_URL / ARKUSZ_TOKEN in the environment win (see scripts/mock-sheet-server.mjs).
+  return {
+    url: process.env.ARKUSZ_URL || get('VITE_ARKUSZ_URL'),
+    token: process.env.ARKUSZ_TOKEN || get('VITE_ARKUSZ_TOKEN'),
+  }
 }
 
 const { url, token } = fromEnv()
@@ -62,7 +66,21 @@ const survey = JSON.parse(
 const fields = []
 for (const section of survey.sekcje) {
   for (const p of section.pytania) {
-    fields.push({ id: p.id, tresc: p.tresc, typ: p.typ, pytanie: p })
+    if (p.typ === 'ranking') {
+      // One field per place, exactly as submit.ts sends it.
+      const miejsca = p.max ?? 3
+      for (let i = 1; i <= miejsca; i += 1) {
+        fields.push({
+          id: `${p.id}::${i}`,
+          tresc: `${p.tresc} [${i}. miejsce]`,
+          typ: 'ranking-miejsce',
+          miejsce: i,
+          pytanie: p,
+        })
+      }
+    } else {
+      fields.push({ id: p.id, tresc: p.tresc, typ: p.typ, pytanie: p })
+    }
     if (p.komentarz) {
       fields.push({
         id: `${p.id}::komentarz`,
@@ -98,6 +116,12 @@ function realistic(field) {
       return (p.opcje ?? [])
         .map((o) => (typeof o === 'string' ? o : o.tekst))
         .join('; ')
+    // A ranking fills one column per place, so each field carries the option
+    // that would have landed in that position.
+    case 'ranking-miejsce': {
+      const o = (p.opcje ?? [])[field.miejsce - 1]
+      return typeof o === 'string' ? o : (o?.tekst ?? '')
+    }
     case 'komentarz':
       return `Komentarz do: ${p.tresc.slice(0, 40)}…`
     default:

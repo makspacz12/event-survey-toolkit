@@ -1,6 +1,8 @@
 import ankietaJson from '@/data/ankieta.json'
-import type { Survey, Question, Section, Condition, Value } from '@/data/typy'
-import { NIEOBECNY } from '@/components/survey/AnswerWidgets'
+import type { Survey, Question, Value } from '@/data/typy'
+import { NIEOBECNY, absentLabelFor } from '@/components/survey/AnswerWidgets'
+import { cleanRanking } from '@/lib/ranking'
+import { isQuestionVisible, isSectionVisible } from '@/lib/visibility'
 
 const ANKIETA = ankietaJson as Survey
 
@@ -13,31 +15,16 @@ const ANKIETA = ankietaJson as Survey
  * didn't answer and sections they never saw.
  */
 
-/** Same condition logic as in the survey flow: sections and individual questions. */
-function isSatisfied(
-  w: Condition | undefined,
-  odpowiedzi: Record<string, Value>,
-): boolean {
-  if (!w) return true
-  const wartosc = odpowiedzi[w.pytanie]
-  if (w.rowne != null) return wartosc === w.rowne
-  if (w.zawiera != null)
-    return Array.isArray(wartosc) && wartosc.includes(w.zawiera)
-  if (w.rozne_od != null) {
-    if (wartosc == null || wartosc === '') return false
-    return wartosc !== w.rozne_od
-  }
-  return true
-}
-
-function isVisible(sekcja: Section, odpowiedzi: Record<string, Value>): boolean {
-  return isSatisfied(sekcja.pokaz_jesli, odpowiedzi)
-}
-
 /** Answer formatted for display. `null` = skipped, not shown. */
 function formatAnswer(p: Question, w: Value): string | null {
   if (w == null || w === '') return null
-  if (w === NIEOBECNY) return 'nie było mnie'
+  if (w === NIEOBECNY) return absentLabelFor(p)
+  // A ranking reads back as "1. A · 2. B · 3. C": the order IS the answer,
+  // and a plain comma list would hide it.
+  if (p.typ === 'ranking') {
+    const lista = cleanRanking(w, p.opcje ?? [], p.max ?? 3)
+    return lista.length ? lista.map((v, i) => `${i + 1}. ${v}`).join(' · ') : null
+  }
   if (Array.isArray(w)) return w.length ? w.join(', ') : null
   if (w === 'tak') return 'Tak'
   if (w === 'nie') return 'Nie'
@@ -52,11 +39,11 @@ export function AnswerSummary({
   odpowiedzi: Record<string, Value>
 }) {
   const sekcje = ANKIETA.sekcje
-    .filter((s) => isVisible(s, odpowiedzi))
+    .filter((s) => isSectionVisible(s, odpowiedzi))
     .map((s) => ({
       sekcja: s,
       pozycje: s.pytania
-        .filter((p) => isSatisfied(p.pokaz_jesli, odpowiedzi))
+        .filter((p) => isQuestionVisible(p, odpowiedzi))
         .map((p) => ({ pytanie: p, tekst: formatAnswer(p, odpowiedzi[p.id] ?? null) }))
         .filter((x) => x.tekst !== null),
     }))

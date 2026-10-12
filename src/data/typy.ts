@@ -12,6 +12,7 @@ export type QuestionType =
   | 'tak_nie' // two big buttons Yes / No
   | 'jeden_wybor' // chips — exactly one option
   | 'wiele_wyborow' // chips — any number of options
+  | 'ranking' // chips — a few options IN ORDER, tap order is the ranking
   | 'tekst' // open question (textarea)
 
 /**
@@ -24,10 +25,11 @@ export interface Question {
   id: string
   typ: QuestionType
   tresc: string
-  /** for jeden_wybor / wiele_wyborow */
+  /** for jeden_wybor / wiele_wyborow / ranking */
   opcje?: Option[]
   /** for skala (defaults to 1–10) */
   min?: number
+  /** skala: top of the scale. ranking: how many places there are (default 3). */
   max?: number
   wymagane?: boolean
   placeholder?: string
@@ -41,19 +43,29 @@ export interface Question {
   zdjecie?: string
   /**
    * Show the question only for a specific answer to an earlier question.
-   * Works like a section's `pokaz_jesli`, but for a single question — e.g. we
-   * only ask about the jury's rating from someone who actually attended the final.
+   * Works like a section's `pokaz_jesli`, but for a single question.
    */
   pokaz_jesli?: Condition
+  /**
+   * HIDE the question for a specific answer to an earlier question — e.g.
+   * "who contributed most to this debate?" disappears once the debate itself
+   * is marked "I did not attend", and any pick already made is dropped.
+   * Unlike `pokaz_jesli` + `rozne_od`, an unanswered parent keeps the
+   * question visible: people may name a speaker before rating the debate.
+   */
+  ukryj_jesli?: Condition
 }
 
 /**
- * Condition for showing a section OR a single question.
+ * Condition for showing or hiding a section OR a single question.
  *
  * Examples:
- *  • the "Friday" section is shown to anyone who checked "Friday (16.10)" → `zawiera`
- *  • the jury question is shown to anyone who rated the final, i.e. did NOT check
- *    "I wasn't there" → `rozne_od: "nieobecny"`
+ *  • the "Friday" section is shown to anyone who answered "Tak" to the Friday
+ *    attendance question → `rowne: "tak"`
+ *  • the "who contributed most" ranking is hidden for anyone who marked that
+ *    debate as not attended → `ukryj_jesli` with `rowne: "nieobecny"`
+ *  • `rozne_od` shows a question only once its parent is answered with
+ *    something else — "did not attend" excluded, unanswered excluded too
  */
 export interface Condition {
   pytanie: string // id of the filtering question

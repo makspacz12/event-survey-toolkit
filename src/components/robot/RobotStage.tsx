@@ -1,6 +1,8 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { usePointerTracking } from '@/hooks/usePointerTracking'
 import { cn } from '@/lib/utils'
+import type { RobotGeometry } from '@/lib/landingFit'
 
 /**
  * ROBOT — a module DELIBERATELY ISOLATED from the rest of the app.
@@ -26,6 +28,29 @@ const ROBOT_SCENE =
 
 /** Lightweight photo of the scene — a screenshot of that same Spline scene. */
 const PLAKAT = '/robot-plakat.jpg'
+
+/**
+ * Where the robot is inside its own stage, as fractions of the stage height.
+ *
+ * The page around the robot needs this to place the stage so the robot never
+ * runs under the text above it (see src/lib/landingFit.ts). It lives here, with
+ * the scene it describes, so that swapping the robot still means editing only
+ * this file: a new scene gets new numbers and the layout follows.
+ *
+ * `scene` was measured on screenshots at fourteen sizes from 320x480 to
+ * 1280x800: the head starts between 15.5% and 16.2% of the way down and ends
+ * at 31.6%. The 0.15 is the low end, rounded down, so the real head is always
+ * at or below where the layout assumes it is. The hint pill is positioned at
+ * 17%, below that line on purpose: at its old 12% it sat above the head and
+ * would have been the first thing to slide under the text.
+ *
+ * `poster` is the fallback photo: a dark rectangle with no margin above the
+ * head, so it must not start above the text at all.
+ */
+export const ROBOT_GEOMETRY: Record<'scene' | 'poster', RobotGeometry> = {
+  scene: { top: 0.15, headBottom: 0.32 },
+  poster: { top: 0, headBottom: 0.36 },
+}
 
 const Spline = lazy(() => import('@splinetool/react-spline'))
 
@@ -67,7 +92,16 @@ function shouldSaveData(): boolean {
   return Boolean(connection?.saveData)
 }
 
-export function RobotStage({ className }: { className?: string }) {
+export function RobotStage({
+  className,
+  style,
+  onGeometry,
+}: {
+  className?: string
+  style?: CSSProperties
+  /** Told which picture is on screen, the scene or the poster. */
+  onGeometry?: (geometry: RobotGeometry) => void
+}) {
   const stageRef = useRef<HTMLDivElement>(null)
   usePointerTracking(stageRef)
   const [isTouch, setIsTouch] = useState(false)
@@ -138,6 +172,13 @@ export function RobotStage({ className }: { className?: string }) {
     }
   }, [lightVersion, sceneReady])
 
+  // The poster has different proportions from the scene, so the page is told
+  // which of the two it is laying out around.
+  const posterShown = lightVersion || (sceneTimedOut && !sceneReady)
+  useEffect(() => {
+    onGeometry?.(posterShown ? ROBOT_GEOMETRY.poster : ROBOT_GEOMETRY.scene)
+  }, [posterShown, onGeometry])
+
   // The text says outright what to do to make the robot react. "Touch me"
   // was misleading: touching alone does nothing, the head follows the
   // MOVEMENT of the finger.
@@ -145,7 +186,7 @@ export function RobotStage({ className }: { className?: string }) {
 
   if (lightVersion) {
     return (
-      <div className={cn('relative', className)}>
+      <div className={cn('relative', className)} style={style}>
         <img
           src={PLAKAT}
           alt=""
@@ -156,7 +197,7 @@ export function RobotStage({ className }: { className?: string }) {
   }
 
   return (
-    <div ref={stageRef} className={cn('relative', className)}>
+    <div ref={stageRef} className={cn('relative', className)} style={style}>
       <Suspense
         fallback={
           // Skeleton shaped like the robot's silhouette, not a spinner (DESIGN.md §4).
@@ -206,7 +247,7 @@ export function RobotStage({ className }: { className?: string }) {
       {showHint && (
         <div
           aria-hidden="true"
-          className="podpowiedz-robota pointer-events-none absolute right-[7%] top-[12%] z-20 flex items-center gap-2"
+          className="podpowiedz-robota pointer-events-none absolute right-[7%] top-[17%] z-20 flex items-center gap-2"
         >
           <span className="h-px w-7 bg-gradient-to-l from-[#9C7A2C]/70 to-transparent" />
           <span className="whitespace-nowrap rounded-full border border-[#C9A14A]/45 bg-[#FBF8F3]/90 px-3 py-1.5 font-spacemono text-[10px] uppercase tracking-[0.18em] text-[#9C7A2C] backdrop-blur-sm">

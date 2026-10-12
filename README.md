@@ -21,8 +21,8 @@ Masterclass Leadership, during my scholarship with the **Rafał Brzoska Foundati
 
 Masterclass Leadership brings together young leaders and established figures from
 science, business, culture and public life — among them Cardinal Grzegorz Ryś,
-former Prime Minister Hanna Suchocka, Grażyna Kulczyk, and Professor Krzysztof
-Górski of NASA JPL. The event includes three debates, a start-up pitch competition
+former Prime Minister Hanna Suchocka, Grażyna Kulczyk, and ESA astronaut
+Sławosz Uznański-Wiśniewski. The event includes three debates, a start-up pitch competition
 with prizes funded by the foundation, and an evening programme.
 
 Previous editions collected feedback on paper. The forms came back half-filled,

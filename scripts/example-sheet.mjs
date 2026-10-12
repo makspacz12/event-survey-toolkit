@@ -30,6 +30,14 @@ const questionIds = []
 const headers = []
 for (const s of survey.sekcje) {
   for (const p of s.pytania) {
+    // A ranking is one column per place, as in buildPayload (src/lib/submit.ts).
+    if (p.typ === 'ranking') {
+      for (let place = 1; place <= (p.max ?? 3); place += 1) {
+        questionIds.push(`${p.id}::${place}`)
+        headers.push(`${p.tresc} [${place}. miejsce]`)
+      }
+      continue
+    }
     questionIds.push(p.id)
     headers.push(p.tresc)
   }
@@ -48,9 +56,12 @@ const samples = [
       'pt-koncert': '10',
       'pt-integracja': '8',
       'sb-debata1': '8',
-      'sb-debata1-kto': 'kard. Grzegorz Ryś',
+      'sb-debata1-kto::1': 'Krzysztof Zanussi',
+      'sb-debata1-kto::2': 'Grażyna Kulczyk',
+      'sb-debata1-kto::3': 'prof. Marcin Majewski',
       'sb-debata2': '9',
-      'sb-debata2-kto': 'prof. Krzysztof Górski (NASA JPL)',
+      'sb-debata2-kto::1': 'Sławosz Uznański-Wiśniewski',
+      'sb-debata2-kto::2': 'Jarosław Królewski',
       'sb-debaty-uwagi': 'Najbardziej zapadło mi zdanie o tym, że decyzje zapadają zanim je podejmiemy.',
       'kk-polfinal-format': '7',
       'kk-feedback': '9',
@@ -78,11 +89,13 @@ const samples = [
       'obecnosc-dni': 'Sobota (17.10)',
       'sciezka-1600': 'III debata o geopolityce (Sala Petrus)',
       'sb-debata1': '9',
-      'sb-debata1-kto': 'Grażyna Kulczyk',
+      'sb-debata1-kto::1': 'Grażyna Kulczyk',
       'sb-debata2': 'nie było mnie',
       'sb-debaty-uwagi': '',
       'sb-debata3': '10',
-      'sb-debata3-kto': 'prof. Hanna Suchocka',
+      'sb-debata3-kto::1': 'prof. Hanna Suchocka',
+      'sb-debata3-kto::2': 'kard. Grzegorz Ryś',
+      'sb-debata3-kto::3': 'Mark Brzezinski',
       'sb-partnerstwo': '9',
       'kk-polfinal-format': '8',
       'kk-feedback': 'nie było mnie',

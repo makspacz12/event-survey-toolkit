@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { IconCheck } from '@/components/ui/icons'
 import type { Option, Question, Value } from '@/data/typy'
+import { cleanRanking } from '@/lib/ranking'
 
 /**
  * ANSWER WIDGETS — "gold on paper" style from the rating-speakers prototype.
@@ -21,6 +22,16 @@ const INK = '#3B3121'
 
 /** Sentinel value stored for "I wasn't there". */
 export const NIEOBECNY = 'nieobecny'
+
+/**
+ * Wording of the "did not attend" choice: the question's own if it has one
+ * (transport says "Nie korzystałem(-am)"), otherwise the default. The button,
+ * the closing summary and the spreadsheet all read it from here, so the
+ * participant never sees one phrase and the organiser another.
+ */
+export function absentLabelFor(pytanie: Question): string {
+  return pytanie.nieobecnosc_tekst ?? 'Nie brałem(-am) udziału'
+}
 
 const optionText = (o: Option) => (typeof o === 'string' ? o : o.tekst)
 const optionPhoto = (o: Option) =>
@@ -70,7 +81,7 @@ export function QuestionRenderer({
         }
         onChange={onChange}
         allowAbsent={pytanie.nieobecnosc === true}
-        absentLabel={pytanie.nieobecnosc_tekst ?? 'Nie brałem(-am) udziału'}
+        absentLabel={absentLabelFor(pytanie)}
         akcja={akcja}
       />
     )
@@ -118,6 +129,18 @@ function Control({
           options={pytanie.opcje ?? []}
           value={Array.isArray(wartosc) ? wartosc : []}
           onChange={(v) => onChange(v)}
+        />
+      )
+    case 'ranking':
+      return (
+        <SharpTagsRanked
+          options={pytanie.opcje ?? []}
+          // Never the stored value raw: see cleanRanking for what a stale
+          // cache can contain and why it must not reach the screen.
+          value={cleanRanking(wartosc, pytanie.opcje ?? [], pytanie.max ?? 3)}
+          onChange={(v) => onChange(v)}
+          // `max` doubles as the cap here, the way it bounds a scale.
+          limit={pytanie.max ?? 3}
         />
       )
     case 'tekst':
@@ -388,11 +411,20 @@ function OptionChip({
   active,
   withAvatars,
   onClick,
+  rank,
+  inert = false,
+  showRankSlot = false,
 }: {
   option: Option
   active: boolean
   withAvatars: boolean
   onClick: () => void
+  /** 1-based position for a ranking question; undefined elsewhere. */
+  rank?: number
+  /** At the cap, the unpicked options stop responding. */
+  inert?: boolean
+  /** Draw the place marker, filled or empty. Ranking questions only. */
+  showRankSlot?: boolean
 }) {
   const text = optionText(option)
   const photo = optionPhoto(option)
@@ -403,10 +435,15 @@ function OptionChip({
       // doesn't say whether it's selected — a blind user has no way to
       // check what they picked.
       aria-pressed={active}
+      // The rank is colour and a small numeral; neither reaches a screen
+      // reader, so the position goes in the label.
+      aria-label={rank ? `${text}, miejsce ${rank}` : undefined}
+      disabled={inert}
       onClick={onClick}
       className={cn(
         'flex min-h-[44px] items-center gap-2.5 rounded-md border text-left font-spacemono text-[12px] leading-snug transition-all duration-200 focus:outline-none',
         withAvatars ? 'w-full px-2.5 py-2' : 'px-3.5 py-2',
+        inert && 'opacity-45',
       )}
       style={
         active
@@ -418,6 +455,26 @@ function OptionChip({
             }
       }
     >
+      {/* The place marker sits first, where a numbered list keeps it, and it is
+          drawn even when empty. An empty slot on every row is what says
+          "this is an order" before anything has been tapped; a badge that
+          only appears after the first tap says it too late. */}
+      {showRankSlot && (
+        <span
+          aria-hidden="true"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-dmserif text-[13px]"
+          style={
+            rank
+              ? { background: '#fff', color: GOLD_STRONG }
+              : { border: '1px dashed rgba(201,161,74,0.55)' }
+          }
+        >
+          {/* Empty, not a transparent character: the circle is a fixed 24px
+              either way, and a hidden "0" would still be read out by anything
+              that takes the page as text. */}
+          {rank}
+        </span>
+      )}
       {withAvatars &&
         (photo ? (
           <img
@@ -511,6 +568,122 @@ function SharpTagsMulti({
           />
         )
       })}
+    </div>
+  )
+}
+
+/* ------------------------------------------------ ranking: tap order ------- */
+
+/**
+ * Pick a few options IN ORDER, at one tap each.
+ *
+ * THE PROBLEM THIS SOLVES. Asking for a 1st, 2nd and 3rd place usually costs
+ * more interaction than asking for a set: a dropdown per row, or dragging
+ * rows around, or three separate questions. All of that is worse on a phone,
+ * which is where this survey is filled in.
+ *
+ * THE TRICK. The order you tap in IS the ranking. First tap is 1st place,
+ * second is 2nd, third is 3rd. That is exactly the same number of taps as a
+ * plain multi-select, and it carries strictly more information: the only
+ * change is that the chip shows its position instead of just "chosen".
+ *
+ * Tapping a chosen option removes it and the ones below it move up, so a
+ * mistake costs one tap to undo rather than a reset.
+ *
+ * AT THE CAP the unpicked options go inert rather than silently ignoring the
+ * tap: a control that looks live and does nothing is the worse of the two.
+ * Something must be given up first, which is also the honest reading of a
+ * ranking that is full. Swapping the last place for someone else is two taps:
+ * drop one, add the other.
+ *
+ * WHAT TAPPING A CHOSEN OPTION DOES, and the trade behind it. It removes it.
+ * The alternative was to promote it to first place, which would make
+ * reordering a single tap but leave no way to undo a mis-tap. Only one of the
+ * two can have the tap. Mis-taps are the common case and reordering is the
+ * rare one, so removal wins, and a Clear control makes the rare case cheap:
+ * one tap plus however many picks, instead of unpicking every one by hand.
+ *
+ * NOBODY HAS TO ANSWER. These questions are not required, so the honest state
+ * is "nothing chosen" and the hint says so. A survey that forces a favourite
+ * out of someone who did not have one collects a made-up answer.
+ *
+ * WHY IT IS ITS OWN TYPE and not a flag on wiele_wyborow: that widget already
+ * stores answers in tap order, so the data shape is identical. But there the
+ * order is an implementation accident nobody analysing the results would be
+ * entitled to trust. Here it is the answer.
+ */
+function SharpTagsRanked({
+  options,
+  value,
+  onChange,
+  limit,
+}: {
+  options: Option[]
+  value: string[]
+  onChange: (v: Value) => void
+  limit: number
+}) {
+  const withAvatars = options.some((o) => optionPhoto(o))
+  const full = value.length >= limit
+  const toggle = (text: string) =>
+    value.includes(text)
+      ? onChange(value.filter((v) => v !== text))
+      : full
+        ? undefined
+        : onChange([...value, text])
+  return (
+    <div>
+      {/* Two lines, and the first one never changes.
+       *
+       * The instruction used to be one long sentence that moved and reflowed
+       * as picks were made, so the part that mattered - that this is an order
+       * - was the part that disappeared first. It is now a fixed heading, with
+       * the changing state on its own quieter line underneath. */}
+      <div className="mb-1 flex items-baseline justify-between gap-3">
+        <span
+          className="text-[12px] font-semibold uppercase tracking-[0.08em]"
+          style={{ color: GOLD_STRONG }}
+        >
+          Ustaw kolejność od najlepszego
+        </span>
+        {value.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="shrink-0 text-[12px] underline underline-offset-2 focus:outline-none"
+            style={{ color: GOLD_STRONG }}
+          >
+            Wyczyść
+          </button>
+        )}
+      </div>
+      <div className="mb-2 text-[12px] leading-snug">
+        <span style={{ color: '#8A7A57' }}>
+          {value.length === 0
+            ? `Dotknij najpierw tej osoby, która wniosła najwięcej. Możesz pominąć to pytanie.`
+            : full
+              ? `Wszystkie ${limit} miejsca zajęte. Dotknij wybranej osoby, by cofnąć wybór.`
+              : `Wybrano ${value.length} z ${limit}. Kolejne dotknięcie to ${value.length + 1}. miejsce.`}
+        </span>
+      </div>
+      <div className={cn('flex gap-2', withAvatars ? 'flex-col' : 'flex-wrap')}>
+      {options.map((o) => {
+        const text = optionText(o)
+        const at = value.indexOf(text)
+        return (
+          <OptionChip
+            key={text}
+            option={o}
+            active={at >= 0}
+            withAvatars={withAvatars}
+            rank={at >= 0 ? at + 1 : undefined}
+            showRankSlot
+            inert={at < 0 && full}
+            onClick={() => toggle(text)}
+          />
+        )
+      })}
+      </div>
     </div>
   )
 }

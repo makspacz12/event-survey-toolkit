@@ -36,6 +36,7 @@ const TYPE_LABEL = {
   tak_nie: 'Tak / Nie',
   jeden_wybor: 'jedna osoba z listy',
   wiele_wyborow: 'kilka opcji z listy',
+  ranking: 'kilka osób w kolejności (1., 2., 3.)',
   tekst: 'tekst',
 }
 
@@ -51,10 +52,21 @@ const sections = FIXED.map(() => '—')
 for (const section of survey.sekcje) {
   for (const p of section.pytania) {
     const kind = TYPE_LABEL[p.typ] || p.typ
-    ids.push(p.id)
-    labels.push(p.tresc)
-    types.push(kind + (p.wymagane ? ', wymagane' : ''))
-    sections.push(section.tytul)
+    // A ranking is one column per place, same as buildPayload in
+    // src/lib/submit.ts: the header carries the place, the cell one name.
+    if (p.typ === 'ranking') {
+      for (let place = 1; place <= (p.max ?? 3); place += 1) {
+        ids.push(`${p.id}::${place}`)
+        labels.push(`${p.tresc} [${place}. miejsce]`)
+        types.push(`jedna osoba z listy, ${place}. miejsce w kolejności`)
+        sections.push(section.tytul)
+      }
+    } else {
+      ids.push(p.id)
+      labels.push(p.tresc)
+      types.push(kind + (p.wymagane ? ', wymagane' : ''))
+      sections.push(section.tytul)
+    }
 
     if (p.komentarz) {
       ids.push(`${p.id}::komentarz`)

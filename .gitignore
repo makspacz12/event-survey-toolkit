@@ -59,3 +59,8 @@ PLAN-ZBIERANIE-ODPOWIEDZI.md
 
 # Kopia zapasowa nagran
 _nagrania-kopia/
+
+# Build aimed at the local mock endpoint (scripts/mock-sheet-server.mjs)
+dist-mock/
+# Reports from the multi-user simulation
+symulacja-*.json

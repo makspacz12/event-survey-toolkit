@@ -1,8 +1,87 @@
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { BackgroundPaths } from '@/components/ui/background-paths'
 import { Spotlight } from '@/components/ui/spotlight'
 import { ActionButton } from '@/components/ui/action-button'
-import { RobotStage } from '@/components/robot/RobotStage'
+import { RobotStage, ROBOT_GEOMETRY } from '@/components/robot/RobotStage'
+import { fitLanding, type Fit, type RobotGeometry } from '@/lib/landingFit'
+import { cn } from '@/lib/utils'
+
+/**
+ * Measures the real screen and lays the landing page out to fit it.
+ *
+ * The arithmetic is in src/lib/landingFit.ts; this hook only supplies it with
+ * numbers and reruns it whenever one of them can have changed:
+ *
+ *  - the page itself resizes, which is how a phone's address bar sliding in
+ *    and out shows up (the page is 100dvh tall, so its height follows the bar),
+ *  - the text block changes height, which happens when the web fonts arrive
+ *    after first paint and the lines re-wrap,
+ *  - the Start block changes height (a safe-area inset on a notched phone),
+ *  - the phone is rotated.
+ *
+ * Every measurement is a LAYOUT size (clientHeight, offsetHeight), never a
+ * bounding rect. The text block is scaled with a transform and the entrance
+ * animations move things with transforms too; layout sizes ignore both, so
+ * the numbers do not depend on what the result of the last run was, and the
+ * hook cannot chase its own tail.
+ */
+function useLandingFit(robot: RobotGeometry) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
+  const textRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const [fit, setFit] = useState<Fit | null>(null)
+
+  const measure = useCallback(() => {
+    const root = rootRef.current
+    const header = headerRef.current
+    const text = textRef.current
+    const bottom = bottomRef.current
+    if (!root || !header || !text || !bottom) return
+
+    const screenH = root.clientHeight
+    const padTop = parseFloat(getComputedStyle(header).paddingTop) || 0
+    // The Start block is pinned to the bottom, and its top padding is a
+    // see-through scrim, not the button: the button starts below it.
+    const scrim = parseFloat(getComputedStyle(bottom).paddingTop) || 0
+    const next = fitLanding({
+      screenH,
+      padTop,
+      textH: text.offsetHeight,
+      buttonTop: screenH - bottom.offsetHeight + scrim,
+      robot,
+    })
+    setFit((prev) =>
+      prev &&
+      prev.mode === next.mode &&
+      Math.abs(prev.scale - next.scale) < 0.002 &&
+      Math.abs((prev.stageTop ?? -1) - (next.stageTop ?? -1)) < 0.5
+        ? prev
+        : next,
+    )
+  }, [robot])
+
+  useLayoutEffect(() => {
+    measure()
+    const observer = new ResizeObserver(measure)
+    for (const ref of [rootRef, textRef, bottomRef]) {
+      if (ref.current) observer.observe(ref.current)
+    }
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    document.fonts?.ready.then(measure).catch(() => {})
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+    }
+  }, [measure])
+
+  return { fit, rootRef, headerRef, textRef, bottomRef }
+}
 
 /**
  * LANDING — layout per agreement:
@@ -12,8 +91,26 @@ import { RobotStage } from '@/components/robot/RobotStage'
  * After clicking Start, the page "folds up" (animation in App.tsx) and the survey slides in.
  */
 export default function LandingPage({ onStart }: { onStart: () => void }) {
+  const [robot, setRobot] = useState<RobotGeometry>(ROBOT_GEOMETRY.scene)
+  const { fit, rootRef, headerRef, textRef, bottomRef } = useLandingFit(robot)
+
+  const scroll = fit?.mode === 'scroll'
+  const robotFits = fit?.mode === 'robot'
+  // Once the 1.3 MB scene has been mounted it stays mounted, hidden if need
+  // be, so an address bar that flips the layout back and forth does not make
+  // the phone download and build the robot again each time.
+  const robotMounted = useRef(false)
+  if (robotFits) robotMounted.current = true
+
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-paper">
+    <div
+      ref={rootRef}
+      className={cn(
+        'relative h-[100dvh] w-full bg-paper',
+        // A screen too short for the text scrolls instead of overlapping.
+        scroll ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden',
+      )}
+    >
       {/* layer: background gradients */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(95%_55%_at_50%_112%,rgba(201,161,74,0.16),transparent_55%)]" />
@@ -28,11 +125,41 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       />
 
       {/* MIDDLE: 3D robot (isolated module — see components/robot/) */}
-      <RobotStage className="absolute inset-x-0 bottom-0 top-[34%] z-10" />
+      {/* Its top edge is computed, not a fixed percentage: see landingFit.ts.
+          Not rendered until the screen has been measured, so a phone with no
+          room for the robot never starts downloading it. */}
+      {robotMounted.current && (
+        <RobotStage
+          onGeometry={setRobot}
+          className={cn(
+            'absolute inset-x-0 bottom-0 z-10',
+            !robotFits && 'pointer-events-none invisible',
+          )}
+          style={{ top: fit?.stageTop ?? '34%' }}
+        />
+      )}
 
       {/* TOP: survey info (pointer-events-none → cursor passes through
           to the robot; this is CRITICAL for mouse tracking) */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col items-center px-7 pt-[max(2.2rem,env(safe-area-inset-top))] text-center">
+      <header
+        ref={headerRef}
+        className={cn(
+          'pointer-events-none inset-x-0 top-0 z-20 px-7 pt-[max(2.2rem,env(safe-area-inset-top))] text-center',
+          scroll ? 'relative' : 'absolute',
+        )}
+      >
+        {/* The text block is one unit so it can be scaled as one. A transform
+            keeps every line break where it is, which is what makes the scaled
+            height exactly (natural height x scale) and the layout computable
+            in one step instead of by trial and error. */}
+        <div
+          ref={textRef}
+          className="flex w-full flex-col items-center"
+          style={{
+            transform: fit && fit.scale < 1 ? `scale(${fit.scale})` : undefined,
+            transformOrigin: 'top center',
+          }}
+        >
         <motion.span
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -93,10 +220,17 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
             Ankieta zajmie około 5 minut i można ją wypełnić anonimowo.
           </p>
         </motion.div>
+        </div>
       </header>
 
       {/* BOTTOM: Start button (scrim separates it from the robot) */}
-      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-parchment via-parchment/88 to-transparent px-6 pb-[max(1.7rem,env(safe-area-inset-bottom))] pt-12">
+      <div
+        ref={bottomRef}
+        className={cn(
+          'inset-x-0 bottom-0 z-20 bg-gradient-to-t from-parchment via-parchment/88 to-transparent px-6 pb-[max(1.7rem,env(safe-area-inset-bottom))] pt-12',
+          scroll ? 'relative' : 'absolute',
+        )}
+      >
         <motion.div
           initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}

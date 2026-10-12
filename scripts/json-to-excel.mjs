@@ -45,6 +45,7 @@ for (const section of survey.sekcje) {
         : '',
       'Zdjęcie pytania': p.zdjecie ?? '',
       'Pokaż pytanie gdy': p.pokaz_jesli ? JSON.stringify(p.pokaz_jesli) : '',
+      'Ukryj pytanie gdy': p.ukryj_jesli ? JSON.stringify(p.ukryj_jesli) : '',
       Min: p.min ?? '',
       Max: p.max ?? '',
       'Wymagane (tak/nie)': p.wymagane ? 'tak' : 'nie',
@@ -60,7 +61,7 @@ const sheet = XLSX.utils.json_to_sheet(rows)
 sheet['!cols'] = [
   { wch: 16 }, { wch: 22 }, { wch: 14 }, { wch: 26 }, { wch: 40 }, { wch: 34 },
   { wch: 22 }, { wch: 14 }, { wch: 60 }, { wch: 50 }, { wch: 40 }, { wch: 28 },
-  { wch: 34 }, { wch: 6 }, { wch: 6 }, { wch: 18 }, { wch: 20 }, { wch: 22 },
+  { wch: 34 }, { wch: 34 }, { wch: 6 }, { wch: 6 }, { wch: 18 }, { wch: 20 }, { wch: 22 },
   { wch: 18 }, { wch: 30 },
 ]
 sheet['!freeze'] = { xSplit: 0, ySplit: 1 }
@@ -75,7 +76,7 @@ const help = XLSX.utils.aoa_to_sheet([
   ['1.', 'Zmieniaj treść pytań, opcje, kolejność wierszy — normalnie, jak w każdym arkuszu.'],
   ['2.', 'NIE ZMIENIAJ kolumny „ID pytania". To jak PESEL pytania — po nim wiążą się zapisane odpowiedzi.'],
   ['', 'Nowe pytanie = nowy, własny ID (małe litery, myślniki, np. "org-parking").'],
-  ['3.', 'Kolumna „Typ" przyjmuje tylko: skala, tak_nie, jeden_wybor, wiele_wyborow, tekst.'],
+  ['3.', 'Kolumna „Typ" przyjmuje tylko: skala, tak_nie, jeden_wybor, wiele_wyborow, ranking, tekst.'],
   ['4.', 'Opcje odpowiedzi oddzielaj znakiem | (pionowa kreska), np: Tak | Nie | Nie wiem'],
   ['5.', 'Pytania z tej samej sekcji muszą mieć to samo „ID sekcji" i leżeć obok siebie.'],
   ['6.', 'Zapisz plik jako ankieta.xlsx w głównym katalogu aplikacji i uruchom: npm run pytania:z-excela'],
@@ -85,6 +86,7 @@ const help = XLSX.utils.aoa_to_sheet([
   ['tak_nie', 'dwa przyciski Tak / Nie'],
   ['jeden_wybor', 'lista opcji, można wybrać jedną'],
   ['wiele_wyborow', 'lista opcji, można wybrać kilka'],
+  ['ranking', 'lista opcji, wybiera się kilka w kolejności (1., 2., 3.); kolumna „Max" ustawia liczbę miejsc, domyślnie 3'],
   ['tekst', 'pole na dłuższą wypowiedź'],
   [''],
   ['KOLUMNY DODATKOWE'],

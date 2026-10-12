@@ -41,8 +41,10 @@ function loadEnv() {
 }
 
 const env = loadEnv()
-const URL = env.VITE_ARKUSZ_URL
-const TOKEN = env.VITE_ARKUSZ_TOKEN
+// ARKUSZ_URL / ARKUSZ_TOKEN in the environment win, so the same script
+// can be aimed at scripts/mock-sheet-server.mjs instead of the real sheet.
+const URL = process.env.ARKUSZ_URL || env.VITE_ARKUSZ_URL
+const TOKEN = process.env.ARKUSZ_TOKEN || env.VITE_ARKUSZ_TOKEN
 
 if (!URL || !TOKEN) {
   console.error('ERROR: missing VITE_ARKUSZ_URL or VITE_ARKUSZ_TOKEN in .env.local')
@@ -59,6 +61,19 @@ function payload(waveNr, personNr) {
   const labels = {}
   for (const s of survey.sekcje) {
     for (const p of s.pytania) {
+      // A ranking travels as one key per place, same as buildPayload in
+      // src/lib/submit.ts; a single joined key would open a column the real
+      // app never writes to.
+      if (p.typ === 'ranking') {
+        const names = (p.opcje ?? []).map((o) => (typeof o === 'string' ? o : o.tekst))
+        for (let i = 1; i <= (p.max ?? 3); i += 1) {
+          responses[`${p.id}::${i}`] = names.length
+            ? (names[(personNr + i - 1) % names.length] ?? '')
+            : ''
+          labels[`${p.id}::${i}`] = `${p.tresc} [${i}. miejsce]`
+        }
+        continue
+      }
       labels[p.id] = p.tresc
       if (p.typ === 'skala') responses[p.id] = String(((personNr * 3) % 10) + 1)
       else if (p.typ === 'tak_nie') responses[p.id] = personNr % 2 ? 'Tak' : 'Nie'

@@ -32,8 +32,10 @@ function loadEnv() {
 }
 
 const env = loadEnv()
-const URL = env.VITE_ARKUSZ_URL
-const TOKEN = env.VITE_ARKUSZ_TOKEN
+// ARKUSZ_URL / ARKUSZ_TOKEN in the environment win, so the same script
+// can be aimed at scripts/mock-sheet-server.mjs instead of the real sheet.
+const URL = process.env.ARKUSZ_URL || env.VITE_ARKUSZ_URL
+const TOKEN = process.env.ARKUSZ_TOKEN || env.VITE_ARKUSZ_TOKEN
 
 if (!URL || !TOKEN) {
   console.error('ERROR: missing VITE_ARKUSZ_URL or VITE_ARKUSZ_TOKEN in .env.local')
@@ -108,6 +110,16 @@ const realistic = (p) => {
     const list = options(p)
     return z % 2 === 0 ? list.join('; ') : list[z % list.length]
   }
+  if (p.typ === 'ranking') {
+    // Order matters here, so the sample rotates which option comes first.
+    const list = options(p)
+    const start = z % list.length
+    return list
+      .slice(start)
+      .concat(list.slice(0, start))
+      .slice(0, p.max ?? 3)
+      .join('; ')
+  }
   if (p.typ === 'tekst') {
     const variants = [
       'Świetna organizacja, zabrakło tylko przerw między blokami.',
@@ -126,6 +138,7 @@ const average = (p) => {
   if (p.typ === 'tak_nie') return 'Tak'
   if (p.typ === 'jeden_wybor') return firstOption(p)
   if (p.typ === 'wiele_wyborow') return firstOption(p)
+  if (p.typ === 'ranking') return firstOption(p)
   if (p.typ === 'tekst') return 'Odpowiedź testowa.'
   return undefined
 }
@@ -135,6 +148,7 @@ const lowest = (p) => {
   if (p.typ === 'tak_nie') return 'Nie'
   if (p.typ === 'jeden_wybor') return lastOption(p)
   if (p.typ === 'wiele_wyborow') return lastOption(p)
+  if (p.typ === 'ranking') return lastOption(p)
   if (p.typ === 'tekst') return 'Wszystko do poprawy.'
   return undefined
 }
@@ -144,6 +158,7 @@ const highest = (p) => {
   if (p.typ === 'tak_nie') return 'Tak'
   if (p.typ === 'jeden_wybor') return firstOption(p)
   if (p.typ === 'wiele_wyborow') return options(p).join('; ')
+  if (p.typ === 'ranking') return options(p).slice(0, p.max ?? 3).join('; ')
   if (p.typ === 'tekst') return 'Rewelacja od początku do końca.'
   return undefined
 }
@@ -308,7 +323,31 @@ for (const s of scenarios) {
   }
   answers['koniec-dopisek'] = s.dopisek ?? ''
 
-  const labels = { ...allLabels }
+  // Rankings: one key per place, every place sent even when empty, same as
+  // buildPayload in src/lib/submit.ts. The strategies above produce a joined
+  // "A; B; C" string, which is split back into its places here.
+  const rankingLabels = {}
+  for (const section of survey.sekcje) {
+    for (const p of section.pytania) {
+      if (p.typ !== 'ranking') continue
+      const picked =
+        typeof answers[p.id] === 'string' && answers[p.id] !== ''
+          ? answers[p.id].split('; ')
+          : []
+      delete answers[p.id]
+      for (let i = 1; i <= (p.max ?? 3); i += 1) {
+        answers[`${p.id}::${i}`] = picked[i - 1] ?? ''
+        rankingLabels[`${p.id}::${i}`] = `${p.tresc} [${i}. miejsce]`
+      }
+    }
+  }
+
+  const labels = { ...allLabels, ...rankingLabels }
+  for (const section of survey.sekcje) {
+    for (const p of section.pytania) {
+      if (p.typ === 'ranking') delete labels[p.id]
+    }
+  }
   for (const key of Object.keys(answers)) {
     if (key.endsWith('::komentarz')) {
       const base = key.replace('::komentarz', '')

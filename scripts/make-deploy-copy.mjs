@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { createEnvironment, createFile, loadScript } from './lib/fake-google.mjs'
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = join(DIR, 'apps-script', 'Kod.gs')
@@ -92,6 +93,36 @@ if (!sheetName || !scriptVersion || headerEnd === -1) {
 }
 const headerEndLine = copy.indexOf('\n', headerEnd) + 1
 const quote = (s) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+
+// EVERY setting the template declares above SCRIPT_VERSION must survive the
+// header swap. Five of them get a Polish explanation of their own below; any
+// other is carried over verbatim. This used to be a fixed list of five, and
+// the day two constants were added to the template, the copy pasted into
+// Google threw "MAX_COLUMNS is not defined" on every single write.
+const EXPLAINED = ['TOKEN', 'SPREADSHEET_ID', 'SHEET_NAME', 'ADMIN_TOKEN', 'SCRIPT_VERSION']
+const region = copy.slice(0, headerEndLine)
+const declared = [...region.matchAll(/^const (\w+) = (.*?)\r?$/gm)].map((m) => ({
+  name: m[1],
+  value: m[2],
+  line: `const ${m[1]} = ${m[2]}`,
+}))
+const carried = declared.filter((d) => !EXPLAINED.includes(d.name))
+for (const d of carried) {
+  // Only a whole, single-line literal can be carried over blindly.
+  if (!/^(?:'[^']*'|"[^"]*"|-?\d+(?:\.\d+)?|true|false|null)\s*;?$/.test(d.value)) {
+    console.error(`The header of Kod.gs declares ${d.name} as something other than a one-line literal — teach make-deploy-copy.mjs about it first. Nothing written.`)
+    process.exit(1)
+  }
+}
+const carriedBlock = carried.length
+  ? `
+/**
+ * Pozostałe ustawienia ze wzorca (apps-script/Kod.gs), przeniesione bez
+ * zmian. Nie trzeba ich ruszać.
+ */
+${carried.map((d) => d.line).join('\n')}
+`
+  : ''
 const polishHeader = `/**
  * ANKIETA MASTERCLASS LEADERSHIP 2026 — SKRYPT ODBIERAJĄCY ODPOWIEDZI
  * ====================================================================
@@ -138,13 +169,39 @@ const ADMIN_TOKEN = ${quote(adminToken)}
 
 /** Wersja kodu, zgłaszana przez polecenie „status”. */
 const SCRIPT_VERSION = ${quote(scriptVersion)}
-`
+${carriedBlock}`
 const newline = copy.includes('\r\n') ? '\r\n' : '\n'
 copy = polishHeader.replace(/\n/g, newline) + copy.slice(headerEndLine)
+
+// SELF-CHECK. The finished copy is run once, here, against the stand-in for
+// Google that the unit tests use: one real save with a real survey key, then
+// the "status" command. Whatever is pasted into Google has therefore saved a
+// row at least once. A copy that fails this is not written at all.
+function selfCheck(code) {
+  const holder = { file: createFile(), cache: {}, consoleErrors: [], loggerEntries: [] }
+  const { script } = loadScript(code, createEnvironment(holder), ['doPost', 'SURVEY_COLUMNS', 'SHEET_NAME'])
+  const post = (body) => JSON.parse(script.doPost({ postData: { contents: JSON.stringify(body) } }).tresc)
+  const [key, label] = script.SURVEY_COLUMNS[0]
+  const saved = post({ token, sesja: 'samokontrola', kto: 'samokontrola', wersja: 'x', pulapka: '', odpowiedzi: { [key]: 'Tak' }, etykiety: { [key]: label } })
+  if (saved.ok !== true) throw new Error(`a save failed: ${JSON.stringify(saved)}`)
+  const tab = holder.file.getSheetByName(script.SHEET_NAME)
+  if (!tab || tab.data.length !== 3) throw new Error('the save did not produce exactly one data row')
+  if (String(tab.data[2][tab.data[0].indexOf(key)]) !== 'Tak') throw new Error('the saved value did not land under its column')
+  const st = post({ token, pulapka: '', akcja: 'status', adminToken })
+  if (st.ok !== true || st.wersjaSkryptu !== scriptVersion) throw new Error(`status failed: ${JSON.stringify(st)}`)
+  if (holder.consoleErrors.length) throw new Error(`the script logged errors: ${holder.consoleErrors.join(' | ')}`)
+}
+try {
+  selfCheck(copy)
+} catch (err) {
+  console.error(`SELF-CHECK FAILED — the copy would not work in Google, so nothing was written.\n  ${err.message}`)
+  process.exit(1)
+}
 
 writeFileSync(OUTPUT, copy, 'utf8')
 console.log(`Written: ${OUTPUT}`)
 console.log(`  password: ${token.slice(0, 3)}… (from .env.local)`)
 console.log(`  spreadsheet id: ${sheetId || '(empty — script bound to its own sheet)'}`)
 console.log(`  maintenance password: ${adminToken.slice(0, 3)}… (ARKUSZ_ADMIN_TOKEN in .env.local)`)
+console.log(`  self-check: one save and one status command ran fine on the stand-in for Google (${carried.length} extra setting${carried.length === 1 ? '' : 's'} carried over: ${carried.map((d) => d.name).join(', ') || 'none'})`)
 console.log('Paste the whole file into the Apps Script editor, then Deploy → Manage deployments → New version.')
